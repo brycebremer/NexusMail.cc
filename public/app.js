@@ -377,7 +377,8 @@ function renderMessages() {
     html += '<span class="m-from">' + esc(m.from.split('<')[0].trim()) + '</span>';
     html += '<span class="m-subj">' + esc(m.subject) + '</span>';
     html += '<div class="m-meta"><span class="m-date">' + fmtDate(m.date) + '</span>';
-    html += '<div class="m-flags"><span class="star ' + (m.starred?'on':'') + '" data-uid="' + m.id + '" data-starred="' + m.starred + '" style="color:' + (m.starred?'var(--warn)':'') + '">' + svg('<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',12) + '</span>';
+    var inFav = (S.folder === 'Favorites');
+    html += '<div class="m-flags"><span class="star ' + (inFav?'on':'') + '" data-uid="' + m.id + '" data-starred="' + inFav + '" style="color:' + (inFav?'var(--warn)':'') + '">' + svg('<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',12) + '</span>';
     if (m.hasAttachments) html += svg('<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>', 12);
     html += '</div></div></div>';
   }
@@ -410,8 +411,7 @@ function renderMessages() {
     stars[i].addEventListener('click', function(e) {
       e.stopPropagation();
       var uid = parseInt(this.getAttribute('data-uid'));
-      var starred = this.getAttribute('data-starred') === 'true';
-      doStar(uid, !starred);
+      doStar(uid);
     });
   }
 }
@@ -475,29 +475,27 @@ function openMsg(uid) {
 function toggleSel(uid) { S.selected.has(uid) ? S.selected.delete(uid) : S.selected.add(uid); renderMessages(); }
 function toggleSelectAll() { if (S.allSelected) { S.selected.clear(); S.allSelected = false; } else { for (var i=0;i<S.messages.length;i++) S.selected.add(S.messages[i].id); S.allSelected = true; } renderMessages(); }
 
-function doStar(uid, starred) {
-  // Starring moves to Favorites folder, unstarring moves back to INBOX
-  if (starred) {
-    api('folders/create', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ name: 'Favorites' }) }).catch(function() {}).then(function() {
-      return api('move', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ folder: S.folder, dest: 'Favorites', uids: [uid] }) });
-    }).then(function() {
-      api('star', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ folder: 'Favorites', uid: uid, starred: true }) }).catch(function() {});
-      S.messages = S.messages.filter(function(m) { return m.id !== uid; });
-      if (S.activeUid === uid) {
-        S.activeUid = null; S.activeMsg = null;
-        document.getElementById('msgView').innerHTML = '<div class="empty-state"><p>Moved to Favorites</p></div>';
-      }
-      renderMessages(); renderFolders(); toast('Added to Favorites', 'success');
-    }).catch(function(e) { toast(e.message, 'error'); });
-  } else {
+function doStar(uid) {
+  // In Favorites: unstar = move back to INBOX. Elsewhere: star = move to Favorites.
+  if (S.folder === 'Favorites') {
     api('move', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ folder: S.folder, dest: 'INBOX', uids: [uid] }) }).then(function() {
-      api('star', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ folder: 'INBOX', uid: uid, starred: false }) }).catch(function() {});
       S.messages = S.messages.filter(function(m) { return m.id !== uid; });
       if (S.activeUid === uid) {
         S.activeUid = null; S.activeMsg = null;
         document.getElementById('msgView').innerHTML = '<div class="empty-state"><p>Removed from Favorites</p></div>';
       }
       renderMessages(); renderFolders(); toast('Removed from Favorites', 'success');
+    }).catch(function(e) { toast(e.message, 'error'); });
+  } else {
+    api('folders/create', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ name: 'Favorites' }) }).catch(function() {}).then(function() {
+      return api('move', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ folder: S.folder, dest: 'Favorites', uids: [uid] }) });
+    }).then(function() {
+      S.messages = S.messages.filter(function(m) { return m.id !== uid; });
+      if (S.activeUid === uid) {
+        S.activeUid = null; S.activeMsg = null;
+        document.getElementById('msgView').innerHTML = '<div class="empty-state"><p>Moved to Favorites</p></div>';
+      }
+      renderMessages(); renderFolders(); toast('Added to Favorites', 'success');
     }).catch(function(e) { toast(e.message, 'error'); });
   }
 }
@@ -577,7 +575,7 @@ function msgContextMenu(e, uid) {
   var msg = null;
   for (var i = 0; i < S.messages.length; i++) { if (S.messages[i].id === uid) { msg = S.messages[i]; break; } }
   if (!msg) return;
-  var isStarred = msg.starred;
+  var isStarred = (S.folder === 'Favorites');
   var menu = document.createElement('div');
   menu.className = 'msg-menu';
   menu.id = 'msgContextMenu';
@@ -590,7 +588,7 @@ function msgContextMenu(e, uid) {
     '<div class="msg-menu-item" data-action="archive">' + svg('<polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/>',14) + ' Archive</div>' +
     '<div class="msg-menu-item" data-action="move">' + svg('<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><polyline points="12 11 12 17"/><polyline points="9 14 12 11 15 14"/>',14) + ' Move to…</div>' +
     '<div class="msg-menu-sep"></div>' +
-    '<div class="msg-menu-item" data-action="star">' + svg('<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',14) + (isStarred ? ' Remove favorite' : ' Add favorite') + '</div>' +
+    '<div class="msg-menu-item" data-action="star">' + svg('<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',14) + (S.folder === 'Favorites' ? ' Remove favorite' : ' Add favorite') + '</div>' +
     '<div class="msg-menu-sep"></div>' +
     '<div class="msg-menu-item danger" data-action="delete">' + svg('<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',14) + ' Delete</div>';
   document.body.appendChild(menu);
@@ -605,7 +603,7 @@ function msgContextMenu(e, uid) {
       else if (action === 'forward') forwardUid(uid);
       else if (action === 'archive') archiveUid(uid);
       else if (action === 'move') { S._moveUids = [uid]; showMovePicker([uid], '1 message'); }
-      else if (action === 'star') doStar(uid, !isStarred);
+      else if (action === 'star') doStar(uid);
       else if (action === 'delete') deleteUids([uid]);
       closeMsgMenu();
     });
