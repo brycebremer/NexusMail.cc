@@ -356,8 +356,9 @@ function renderMessages() {
     if (m.id === S.activeUid) classes += ' active';
     if (!m.read) classes += ' unread';
     if (isNew) classes += ' new-msg';
+    if (S.selected.has(m.id)) classes += ' selected';
     html += '<div class="' + classes + '" data-uid="' + m.id + '">';
-    html += '<div class="m-check"><input type="checkbox" ' + (S.selected.has(m.id)?'checked':'') + ' data-uid="' + m.id + '"></div>';
+    html += '<div class="m-sel" data-uid="' + m.id + '">' + (S.selected.has(m.id) ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="var(--accent)" stroke="var(--accent)" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-5" stroke="#fff" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>' : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text2)" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>') + '</div>';
     html += '<span class="m-from">' + esc(m.from.split('<')[0].trim()) + '</span>';
     html += '<span class="m-subj">' + esc(m.subject) + '</span>';
     html += '<div class="m-meta"><span class="m-date">' + fmtDate(m.date) + '</span>';
@@ -369,13 +370,18 @@ function renderMessages() {
   var rows = document.querySelectorAll('.msg-row');
   for (var i = 0; i < rows.length; i++) {
     rows[i].addEventListener('click', function(e) {
-      if (e.target.tagName === 'INPUT' || e.target.closest('.star')) return;
-      openMsg(parseInt(this.getAttribute('data-uid')));
+      if (e.target.closest('.star') || e.target.closest('.m-sel')) return;
+      var uid = parseInt(this.getAttribute('data-uid'));
+      if (e.ctrlKey || e.metaKey) {
+        toggleSel(uid);
+      } else {
+        openMsg(uid);
+      }
     });
   }
-  var checks = document.querySelectorAll('.m-check input');
-  for (var i = 0; i < checks.length; i++) {
-    checks[i].addEventListener('click', function(e) {
+  var sels = document.querySelectorAll('.m-sel');
+  for (var i = 0; i < sels.length; i++) {
+    sels[i].addEventListener('click', function(e) {
       e.stopPropagation();
       toggleSel(parseInt(this.getAttribute('data-uid')));
     });
