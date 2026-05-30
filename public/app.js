@@ -253,7 +253,68 @@ function renderFolders() {
   var items = document.querySelectorAll('#folders .folder');
   for (var i = 0; i < items.length; i++) {
     items[i].addEventListener('click', function() { selectFolder(this.getAttribute('data-folder')); });
+    items[i].addEventListener('contextmenu', function(e) {
+      e.preventDefault();
+      folderContextMenu(e, this.getAttribute('data-folder'));
+    });
   }
+}
+
+function folderContextMenu(e, path) {
+  closeFolderMenu();
+  var lower = path.toLowerCase();
+  var isSpecial = (lower === 'inbox' || lower === 'trash' || lower === 'sent' || lower === 'drafts' || lower === 'junk' || lower === 'spam');
+  var menu = document.createElement('div');
+  menu.className = 'folder-menu';
+  menu.id = 'folderContextMenu';
+  menu.style.left = e.clientX + 'px';
+  menu.style.top = e.clientY + 'px';
+  menu.innerHTML = '<div class="folder-menu-item" data-action="move">Move messages here…</div>' +
+    (isSpecial ? '' : '<div class="folder-menu-item" data-action="rename">Rename folder</div>') +
+    (isSpecial ? '' : '<div class="folder-menu-item danger" data-action="delete">Delete folder</div>');
+  document.body.appendChild(menu);
+  // Adjust position if off-screen
+  var rect = menu.getBoundingClientRect();
+  if (rect.right > window.innerWidth) menu.style.left = (window.innerWidth - rect.width - 8) + 'px';
+  if (rect.bottom > window.innerHeight) menu.style.top = (window.innerHeight - rect.height - 8) + 'px';
+  S._menuFolder = path;
+  var menuItems = menu.querySelectorAll('.folder-menu-item');
+  for (var i = 0; i < menuItems.length; i++) {
+    menuItems[i].addEventListener('click', function() {
+      var action = this.getAttribute('data-action');
+      if (action === 'rename') {
+        var newName = prompt('Rename folder:', path);
+        if (newName && newName.trim() && newName.trim() !== path) {
+          api('folders/rename', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ oldPath: path, newPath: newName.trim() }) }).then(function() {
+            toast('Folder renamed', 'success'); loadFolders();
+          }).catch(function(e) { toast(e.message, 'error'); });
+        }
+      } else if (action === 'delete') {
+        deleteFolder(path);
+      } else if (action === 'move') {
+        // Move selected messages to this folder
+        if (S.selected.size > 0) {
+          S._moveUids = Array.from(S.selected);
+          doMoveTo(path);
+        } else if (S.activeUid) {
+          S._moveUids = [S.activeUid];
+          doMoveTo(path);
+        } else {
+          toast('Select messages first', 'error');
+        }
+      }
+      closeFolderMenu();
+    });
+  }
+  // Close on click outside
+  setTimeout(function() {
+    document.addEventListener('click', closeFolderMenu, { once: true });
+  }, 10);
+}
+
+function closeFolderMenu() {
+  var el = document.getElementById('folderContextMenu');
+  if (el) el.remove();
 }
 
 function selectFolder(path) {
@@ -354,6 +415,7 @@ function openMsg(uid) {
       '<span class="label">Date</span><span class="value">' + new Date(m.date).toLocaleString() + '</span></div></div>' +
       '<div class="ev-actions"><button class="btn btn-sm" onclick="replyMsg()">' + svg('<polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/>',14) + ' Reply</button>' +
       '<button class="btn btn-sm" onclick="forwardMsg()">' + svg('<polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/>',14) + ' Forward</button>' +
+      '<button class="btn btn-sm" onclick="moveMsg()">' + svg('<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><polyline points="12 11 12 17"/><polyline points="9 14 12 11 15 14"/>',14) + ' Move</button>' +
       '<button class="btn btn-sm btn-danger" onclick="deleteMsg()">' + svg('<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',14) + ' Delete</button></div>' +
       bodyContent;
 
@@ -463,3 +525,117 @@ fetch('/api/check', { credentials: 'include' }).then(function(r) { return r.json
   else if (j.authenticated) { hideLogin(); connectWS(); }
   else showLogin();
 }).catch(function() { showLogin(); });
+// ── Folder Management & Move ──
+
+function createFolder() {
+  var name = prompt('New folder name:');
+  if (!name || !name.trim()) return;
+  api('folders/create', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ name: name.trim() })
+  }).then(function() {
+    toast('Folder created', 'success');
+    loadFolders();
+  }).catch(function(e) { toast(e.message, 'error'); });
+}
+
+function deleteFolder(path) {
+  if (!confirm('Delete folder "' + path + '" and all its messages?')) return;
+  api('folders/delete', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ path: path })
+  }).then(function() {
+    toast('Folder deleted', 'success');
+    if (S.folder === path) { S.folder = null; }
+    loadFolders();
+  }).catch(function(e) { toast(e.message, 'error'); });
+}
+
+function showMovePicker(uids, label) {
+  // Build a dropdown with all folders except current
+  var folders = S.folders.filter(function(f) { return f.path !== S.folder; });
+  if (!folders.length) { toast('No other folders to move to', 'error'); return; }
+
+  // Use a simple prompt-style picker
+  var html = '<div class="move-picker-overlay" id="movePickerOverlay" onclick="if(event.target===this)closeMovePicker()">';
+  html += '<div class="move-picker">';
+  html += '<div class="move-picker-head">Move ' + esc(label) + ' to…<button onclick="closeMovePicker()">✕</button></div>';
+  html += '<div class="move-picker-list">';
+  for (var i = 0; i < folders.length; i++) {
+    html += '<div class="move-picker-item" data-folder="' + esc(folders[i].path) + '">';
+    html += '<span class="f-icon">' + folderIcon(folders[i]) + '</span>';
+    html += '<span>' + esc(folders[i].name) + '</span>';
+    if (folders[i].unread) html += '<span class="f-badge has-unread" style="margin-left:auto">' + folders[i].unread + '</span>';
+    html += '</div>';
+  }
+  html += '</div>';
+  html += '<div class="move-picker-foot">';
+  html += '<input id="moveNewFolder" placeholder="Or create new folder…" style="flex:1">';
+  html += '<button class="btn btn-sm" onclick="moveCreateAndGo()">Create & Move</button>';
+  html += '</div></div></div>';
+
+  document.body.insertAdjacentHTML('beforeend', html);
+
+  // Store the UIDs for the move
+  S._moveUids = uids;
+  S._moveLabel = label;
+
+  var items = document.querySelectorAll('.move-picker-item');
+  for (var i = 0; i < items.length; i++) {
+    items[i].addEventListener('click', function() {
+      doMoveTo(this.getAttribute('data-folder'));
+    });
+  }
+
+  var inp = document.getElementById('moveNewFolder');
+  inp.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && inp.value.trim()) moveCreateAndGo();
+  });
+  inp.focus();
+}
+
+function moveCreateAndGo() {
+  var name = (document.getElementById('moveNewFolder').value || '').trim();
+  if (!name) return;
+  api('folders/create', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ name: name })
+  }).then(function() {
+    doMoveTo(name);
+  }).catch(function(e) { toast(e.message, 'error'); });
+}
+
+function doMoveTo(dest) {
+  var uids = S._moveUids;
+  if (!uids || !uids.length) return;
+  api('move', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ folder: S.folder, dest: dest, uids: uids })
+  }).then(function() {
+    S.messages = S.messages.filter(function(m) { return uids.indexOf(m.id) === -1; });
+    if (S.activeUid && uids.indexOf(S.activeUid) >= 0) {
+      S.activeUid = null; S.activeMsg = null;
+      document.getElementById('msgView').innerHTML = '<div class="empty-state"><p>Moved to ' + esc(dest) + '</p></div>';
+    }
+    S.selected.clear();
+    closeMovePicker();
+    renderMessages(); renderFolders();
+    toast('Moved to ' + dest, 'success');
+  }).catch(function(e) { toast(e.message, 'error'); });
+}
+
+function closeMovePicker() {
+  var el = document.getElementById('movePickerOverlay');
+  if (el) el.remove();
+  S._moveUids = null;
+}
+
+function moveMsg() {
+  if (!S.activeUid) return;
+  showMovePicker([S.activeUid], '1 message');
+}
+
+function moveSelected() {
+  if (!S.selected.size) return;
+  showMovePicker(Array.from(S.selected), S.selected.size + ' messages');
+}

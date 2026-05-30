@@ -342,6 +342,16 @@ async function deleteMessages(fp, uids) {
   return { ok: true, moved: true };
 }
 
+
+async function moveMessages(src, dest, uids) {
+  if (!imapClient) throw new Error('Not connected');
+  await imapClient.mailboxOpen(src);
+  for (var i = 0; i < uids.length; i++) {
+    await imapClient.messageMove(uids[i], dest, { uid: true });
+  }
+  await imapClient.mailboxClose();
+  return { ok: true };
+}
 async function markMessagesRead(fp, uids) {
   if (!imapClient) throw new Error('Not connected');
   await imapClient.mailboxOpen(fp);
@@ -384,6 +394,51 @@ app.post('/api/star', requireAuth, function(req, res) { toggleStar(req.body.fold
 app.post('/api/delete', requireAuth, function(req, res) { deleteMessages(req.body.folder, req.body.uids).then(function(r) { res.json(r); }).catch(function(e) { res.status(400).json({ error: e.message }); }); });
 app.post('/api/markread', requireAuth, function(req, res) { markMessagesRead(req.body.folder, req.body.uids).then(function(r) { res.json(r); }).catch(function(e) { res.status(400).json({ error: e.message }); }); });
 app.post('/api/send', requireAuth, function(req, res) { sendMail(req.body).then(function(r) { res.json(r); }).catch(function(e) { res.status(400).json({ error: e.message }); }); });
+
+
+// ── Folder management ──
+app.post('/api/folders/create', requireAuth, function(req, res) {
+  if (!imapClient) return res.status(400).json({ error: 'Not connected' });
+  var name = (req.body.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'Folder name required' });
+  imapClient.mailboxCreate(name).then(function() {
+    res.json({ ok: true });
+  }).catch(function(e) { res.status(400).json({ error: e.message }); });
+});
+
+app.post('/api/folders/rename', requireAuth, function(req, res) {
+  if (!imapClient) return res.status(400).json({ error: 'Not connected' });
+  var oldPath = (req.body.oldPath || '').trim();
+  var newPath = (req.body.newPath || '').trim();
+  if (!oldPath || !newPath) return res.status(400).json({ error: 'Old and new path required' });
+  imapClient.mailboxRename(oldPath, newPath).then(function() {
+    res.json({ ok: true });
+  }).catch(function(e) { res.status(400).json({ error: e.message }); });
+});
+
+app.post('/api/folders/delete', requireAuth, function(req, res) {
+  if (!imapClient) return res.status(400).json({ error: 'Not connected' });
+  var path = (req.body.path || '').trim();
+  if (!path) return res.status(400).json({ error: 'Folder path required' });
+  // Prevent deleting special folders
+  var lower = path.toLowerCase();
+  if (lower === 'inbox' || lower === 'trash' || lower === 'sent' || lower === 'drafts' || lower === 'junk' || lower === 'spam') {
+    return res.status(400).json({ error: 'Cannot delete system folder' });
+  }
+  imapClient.mailboxDelete(path).then(function() {
+    res.json({ ok: true });
+  }).catch(function(e) { res.status(400).json({ error: e.message }); });
+});
+
+// ── Move messages to folder ──
+app.post('/api/move', requireAuth, function(req, res) {
+  if (!imapClient) return res.status(400).json({ error: 'Not connected' });
+  var src = req.body.folder;
+  var dest = req.body.dest;
+  var uids = req.body.uids;
+  if (!src || !dest || !uids || !uids.length) return res.status(400).json({ error: 'folder, dest, and uids required' });
+  moveMessages(src, dest, uids).then(function(r) { res.json(r); }).catch(function(e) { res.status(400).json({ error: e.message }); });
+});
 
 wss.on('connection', function(ws) {
   wsClients.add(ws);
