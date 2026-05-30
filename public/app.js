@@ -418,6 +418,7 @@ function renderMessages() {
 
 function openMsg(uid) {
   S.activeUid = uid;
+  S.newUids.delete(uid);  // Clear new-message highlight when opened
   var el = document.getElementById('msgView');
   el.innerHTML = '<div class="loading"><div class="spinner"></div> Loading\u2026</div>';
   api('message?folder=' + encodeURIComponent(S.folder) + '&uid=' + uid).then(function(m) {
@@ -477,8 +478,14 @@ function toggleSelectAll() { if (S.allSelected) { S.selected.clear(); S.allSelec
 
 function doStar(uid) {
   // In Favorites: unstar = move back to INBOX. Elsewhere: star = move to Favorites.
+  // Always mark as read in destination and track UID to prevent re-notification
   if (S.folder === 'Favorites') {
     api('move', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ folder: S.folder, dest: 'INBOX', uids: [uid] }) }).then(function() {
+      // Mark as read in INBOX so it doesn't show as unread
+      api('markread', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ folder: 'INBOX', uids: [uid] }) }).catch(function() {});
+      // Track UID so polling doesn't treat it as a new message
+      S.notifiedUids.add(uid);
+      S.newUids.delete(uid);
       S.messages = S.messages.filter(function(m) { return m.id !== uid; });
       if (S.activeUid === uid) {
         S.activeUid = null; S.activeMsg = null;
@@ -490,6 +497,11 @@ function doStar(uid) {
     api('folders/create', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ name: 'Favorites' }) }).catch(function() {}).then(function() {
       return api('move', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ folder: S.folder, dest: 'Favorites', uids: [uid] }) });
     }).then(function() {
+      // Mark as read in Favorites
+      api('markread', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ folder: 'Favorites', uids: [uid] }) }).catch(function() {});
+      // Track UID so polling doesn't re-notify
+      S.notifiedUids.add(uid);
+      S.newUids.delete(uid);
       S.messages = S.messages.filter(function(m) { return m.id !== uid; });
       if (S.activeUid === uid) {
         S.activeUid = null; S.activeMsg = null;
@@ -648,6 +660,7 @@ function archiveUid(uid) {
     }
     throw e;
   }).then(function() {
+    S.notifiedUids.add(uid); S.newUids.delete(uid);
     S.messages = S.messages.filter(function(m) { return m.id !== uid; });
     if (S.activeUid === uid) {
       S.activeUid = null; S.activeMsg = null;
@@ -756,6 +769,8 @@ function doMoveTo(dest) {
     method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ folder: S.folder, dest: dest, uids: uids })
   }).then(function() {
+    // Track UIDs so polling doesn't treat moved messages as new
+    for (var i = 0; i < uids.length; i++) { S.notifiedUids.add(uids[i]); S.newUids.delete(uids[i]); }
     S.messages = S.messages.filter(function(m) { return uids.indexOf(m.id) === -1; });
     if (S.activeUid && uids.indexOf(S.activeUid) >= 0) {
       S.activeUid = null; S.activeMsg = null;
