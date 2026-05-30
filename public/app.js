@@ -392,6 +392,10 @@ function renderMessages() {
         openMsg(uid);
       }
     });
+    rows[i].addEventListener('contextmenu', function(e) {
+      e.preventDefault();
+      msgContextMenu(e, parseInt(this.getAttribute('data-uid')));
+    });
   }
   var sels = document.querySelectorAll('.m-sel');
   for (var i = 0; i < sels.length; i++) {
@@ -545,6 +549,107 @@ fetch('/api/check', { credentials: 'include' }).then(function(r) { return r.json
   else if (j.authenticated) { hideLogin(); connectWS(); }
   else showLogin();
 }).catch(function() { showLogin(); });
+
+// ── Message Context Menu ──
+function msgContextMenu(e, uid) {
+  closeMsgMenu();
+  var msg = null;
+  for (var i = 0; i < S.messages.length; i++) { if (S.messages[i].id === uid) { msg = S.messages[i]; break; } }
+  if (!msg) return;
+  var isStarred = msg.starred;
+  var menu = document.createElement('div');
+  menu.className = 'msg-menu';
+  menu.id = 'msgContextMenu';
+  menu.style.left = e.clientX + 'px';
+  menu.style.top = e.clientY + 'px';
+  menu.innerHTML =
+    '<div class="msg-menu-item" data-action="reply">' + svg('<polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/>',14) + ' Reply</div>' +
+    '<div class="msg-menu-item" data-action="forward">' + svg('<polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/>',14) + ' Forward</div>' +
+    '<div class="msg-menu-sep"></div>' +
+    '<div class="msg-menu-item" data-action="archive">' + svg('<polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/>',14) + ' Archive</div>' +
+    '<div class="msg-menu-item" data-action="move">' + svg('<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><polyline points="12 11 12 17"/><polyline points="9 14 12 11 15 14"/>',14) + ' Move to…</div>' +
+    '<div class="msg-menu-sep"></div>' +
+    '<div class="msg-menu-item" data-action="star">' + svg('<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',14) + (isStarred ? ' Remove favorite' : ' Add favorite') + '</div>' +
+    '<div class="msg-menu-sep"></div>' +
+    '<div class="msg-menu-item danger" data-action="delete">' + svg('<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',14) + ' Delete</div>';
+  document.body.appendChild(menu);
+  var rect = menu.getBoundingClientRect();
+  if (rect.right > window.innerWidth) menu.style.left = (window.innerWidth - rect.width - 8) + 'px';
+  if (rect.bottom > window.innerHeight) menu.style.top = (window.innerHeight - rect.height - 8) + 'px';
+  var items = menu.querySelectorAll('.msg-menu-item');
+  for (var i = 0; i < items.length; i++) {
+    items[i].addEventListener('click', function() {
+      var action = this.getAttribute('data-action');
+      if (action === 'reply') replyToUid(uid);
+      else if (action === 'forward') forwardUid(uid);
+      else if (action === 'archive') archiveUid(uid);
+      else if (action === 'move') { S._moveUids = [uid]; showMovePicker([uid], '1 message'); }
+      else if (action === 'star') doStar(uid, !isStarred);
+      else if (action === 'delete') deleteUids([uid]);
+      closeMsgMenu();
+    });
+  }
+  setTimeout(function() { document.addEventListener('click', closeMsgMenu, { once: true }); }, 10);
+}
+
+function closeMsgMenu() {
+  var el = document.getElementById('msgContextMenu');
+  if (el) el.remove();
+}
+
+function replyToUid(uid) {
+  var msg = null;
+  for (var i = 0; i < S.messages.length; i++) { if (S.messages[i].id === uid) { msg = S.messages[i]; break; } }
+  if (!msg) { toast('Message not found', 'error'); return; }
+  openCompose();
+  var match = msg.from.match(/<(.+)>/);
+  document.getElementById('cTo').value = match ? match[1] : msg.from;
+  document.getElementById('cSubj').value = 'Re: ' + msg.subject.replace(/^Re: /,'');
+  document.getElementById('cBody').value = '';
+}
+
+function forwardUid(uid) {
+  var msg = null;
+  for (var i = 0; i < S.messages.length; i++) { if (S.messages[i].id === uid) { msg = S.messages[i]; break; } }
+  if (!msg) { toast('Message not found', 'error'); return; }
+  openCompose();
+  document.getElementById('cTo').value = '';
+  document.getElementById('cSubj').value = 'Fwd: ' + msg.subject.replace(/^Fwd: /,'');
+  document.getElementById('cBody').value = '';
+}
+
+function archiveUid(uid) {
+  // Create Archive folder if needed, then move
+  api('folders/create', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ name: 'Archive' }) }).then(function() {
+    return api('move', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ folder: S.folder, dest: 'Archive', uids: [uid] }) });
+  }).catch(function(e) {
+    // Folder might already exist, try move anyway
+    if (e.message && e.message.indexOf('already exists') >= 0) {
+      return api('move', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ folder: S.folder, dest: 'Archive', uids: [uid] }) });
+    }
+    throw e;
+  }).then(function() {
+    S.messages = S.messages.filter(function(m) { return m.id !== uid; });
+    if (S.activeUid === uid) {
+      S.activeUid = null; S.activeMsg = null;
+      document.getElementById('msgView').innerHTML = '<div class="empty-state"><p>Archived</p></div>';
+    }
+    renderMessages(); renderFolders(); toast('Archived', 'success');
+  }).catch(function(e) { toast(e.message, 'error'); });
+}
+
+function deleteUids(uids) {
+  api('delete', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({folder:S.folder, uids:uids}) }).then(function() {
+    S.messages = S.messages.filter(function(m) { return uids.indexOf(m.id) === -1; });
+    if (S.activeUid && uids.indexOf(S.activeUid) >= 0) {
+      S.activeUid = null; S.activeMsg = null;
+      document.getElementById('msgView').innerHTML = '<div class="empty-state"><p>Deleted</p></div>';
+    }
+    S.selected.clear();
+    renderMessages(); renderFolders(); toast('Deleted', 'success');
+  }).catch(function(e) { toast(e.message, 'error'); });
+}
+
 // ── Folder Management & Move ──
 
 function createFolder() {

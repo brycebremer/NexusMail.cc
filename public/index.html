@@ -97,6 +97,11 @@ input:focus,textarea:focus{border-color:var(--accent)}textarea{resize:vertical}
 .folder-menu{position:fixed;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 8px 32px rgba(0,0,0,.5);z-index:160;min-width:180px;padding:4px 0}
 .folder-menu-item{padding:8px 14px;font-size:13px;cursor:pointer;transition:background .1s}.folder-menu-item:hover{background:var(--surface2)}
 .folder-menu-item.danger{color:var(--danger)}.folder-menu-item.danger:hover{background:var(--danger-bg)}
+.msg-menu{position:fixed;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 8px 32px rgba(0,0,0,.5);z-index:160;min-width:200px;padding:4px 0}
+.msg-menu-item{padding:8px 14px;font-size:13px;cursor:pointer;transition:background .1s;display:flex;align-items:center;gap:8px}.msg-menu-item:hover{background:var(--surface2)}
+.msg-menu-item.danger{color:var(--danger)}.msg-menu-item.danger:hover{background:var(--danger-bg)}
+.msg-menu-item svg{width:14px;height:14px;opacity:.6;flex-shrink:0}.msg-menu-item:hover svg{opacity:1}
+.msg-menu-sep{height:1px;background:var(--border);margin:4px 14px}
 </style>
 </head>
 <body>

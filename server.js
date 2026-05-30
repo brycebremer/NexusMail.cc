@@ -402,8 +402,14 @@ app.post('/api/folders/create', requireAuth, function(req, res) {
   var name = (req.body.name || '').trim();
   if (!name) return res.status(400).json({ error: 'Folder name required' });
   imapClient.mailboxCreate(name).then(function() {
-    res.json({ ok: true });
-  }).catch(function(e) { res.status(400).json({ error: e.message }); });
+    res.json({ ok: true, created: true });
+  }).catch(function(e) {
+    // If folder already exists, that's fine
+    if (e.code === "ALREADYEXISTS" || (e.message && e.message.indexOf("already exists") >= 0)) {
+      return res.json({ ok: true, existed: true });
+    }
+    res.status(400).json({ error: e.message });
+  });
 });
 
 app.post('/api/folders/rename', requireAuth, function(req, res) {
