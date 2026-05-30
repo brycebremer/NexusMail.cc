@@ -260,9 +260,9 @@ function renderFolders() {
     if (isSpecial) hadSpecial = true;
     html += '<div class="folder ' + (S.folder===f.path?'active':'') + '" data-folder="' + esc(f.path) + '">';
     html += '<span class="f-icon">' + folderIcon(f) + '</span>';
-    html += '<span class="f-name">' + esc(f.name) + '</span>';
-    if (f.unread) html += '<span class="f-badge has-unread">' + f.unread + '</span>';
-    else if (f.total) html += '<span class="f-badge">' + f.total + '</span>';
+    var displayName = f.unread ? esc(f.name) + ' <span class="f-unread-count">(' + f.unread + ')</span>' : esc(f.name);
+    html += '<span class="f-name">' + displayName + '</span>';
+    if (f.total) html += '<span class="f-badge">' + f.total + '</span>';
     html += '</div>';
   }
   document.getElementById('folders').innerHTML = html;
