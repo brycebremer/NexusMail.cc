@@ -238,10 +238,24 @@ function loadFolders() {
   }).catch(function(e) { toast('Folder error: ' + e.message, 'error'); });
 }
 
+function isSpecialFolder(f) {
+  if (f.specialUse) return true;
+  var lower = f.path.toLowerCase();
+  return (lower === 'inbox' || lower === 'trash' || lower === 'sent' || lower === 'drafts' || lower === 'junk' || lower === 'spam');
+}
+
 function renderFolders() {
   var html = '';
+  var hadSpecial = false;
   for (var i = 0; i < S.folders.length; i++) {
     var f = S.folders[i];
+    var isSpecial = isSpecialFolder(f);
+    // Insert spacer between special and user folders
+    if (hadSpecial && !isSpecial) {
+      html += '<div class="folder-spacer"></div>';
+      hadSpecial = false;
+    }
+    if (isSpecial) hadSpecial = true;
     html += '<div class="folder ' + (S.folder===f.path?'active':'') + '" data-folder="' + esc(f.path) + '">';
     html += '<span class="f-icon">' + folderIcon(f) + '</span>';
     html += '<span class="f-name">' + esc(f.name) + '</span>';
