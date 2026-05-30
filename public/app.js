@@ -4,8 +4,9 @@ var S = {
   activeUid: null, activeMsg: null,
   ws: null, allSelected: false, showHtml: false,
   notifiedUids: new Set(),
-  newUids: new Set(),   // UIDs that just arrived — for highlight animation
-  initialized: false  // seed existing UIDs on first load so they don't all pulse
+  newUids: new Set,
+  initialized: false,
+  msgPage: 1, msgTotal: 0, msgLoading: false
 };
 
 function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
@@ -339,12 +340,14 @@ function selectFolder(path) {
 }
 
 function loadMessages() {
+  S.msgPage = 1;
   var el = document.getElementById('msgScroll');
   el.innerHTML = '<div class="loading"><div class="spinner"></div> Loading\u2026</div>';
-  api('messages?folder=' + encodeURIComponent(S.folder) + '&limit=80').then(function(r) {
+  api('messages?folder=' + encodeURIComponent(S.folder) + '&limit=80&page=1').then(function(r) {
     S.messages = r.messages || [];
+    S.msgTotal = r.total || 0;
     document.getElementById('folderTitle').textContent = S.folder;
-    document.getElementById('folderCount').textContent = r.total ? r.total + ' messages' : '';
+    document.getElementById('folderCount').textContent = S.msgTotal ? S.msgTotal + ' messages' : '';
     renderMessages();
     // Seed notifiedUids with current message IDs on first load
     // so existing mail won't be treated as "new" when polling fires
@@ -356,6 +359,23 @@ function loadMessages() {
       console.log('[Notify] Seeded', S.notifiedUids.size, 'existing UIDs, initialized = true');
     }
   }).catch(function(e) { el.innerHTML = '<div class="empty-state"><p>Error: ' + esc(e.message) + '</p></div>'; });
+}
+
+function loadMoreMessages() {
+  if (S.msgLoading) return;
+  if (S.messages.length >= S.msgTotal) return;
+  S.msgLoading = true;
+  S.msgPage++;
+  api('messages?folder=' + encodeURIComponent(S.folder) + '&limit=80&page=' + S.msgPage).then(function(r) {
+    var more = r.messages || [];
+    for (var i = 0; i < more.length; i++) {
+      var exists = false;
+      for (var j = 0; j < S.messages.length; j++) { if (S.messages[j].id === more[i].id) { exists = true; break; } }
+      if (!exists) S.messages.push(more[i]);
+    }
+    S.msgLoading = false;
+    renderMessages();
+  }).catch(function() { S.msgLoading = false; });
 }
 
 function renderMessages() {
@@ -381,6 +401,10 @@ function renderMessages() {
     html += '<div class="m-flags"><span class="star ' + (inFav?'on':'') + '" data-uid="' + m.id + '" data-starred="' + inFav + '" style="color:' + (inFav?'var(--warn)':'') + '">' + svg('<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',12) + '</span>';
     if (m.hasAttachments) html += svg('<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>', 12);
     html += '</div></div></div>';
+  }
+  // Add load more button if there are more messages
+  if (S.messages.length < S.msgTotal) {
+    html += '<div class="load-more" onclick="loadMoreMessages()">Load more (' + (S.msgTotal - S.messages.length) + ' remaining)</div>';
   }
   document.getElementById('msgScroll').innerHTML = html;
   var rows = document.querySelectorAll('.msg-row');
