@@ -572,6 +572,80 @@ function doSend() {
 }
 
 document.getElementById('searchInput').addEventListener('input', function() { renderMessages(); });
+// ── Keyboard Shortcuts ──
+document.addEventListener('keydown', function(e) {
+  // Ignore if typing in an input, textarea, or compose is open
+  var tag = (e.target.tagName || '').toUpperCase();
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  if (document.getElementById('composeOverlay').classList.contains('show')) return;
+  if (document.getElementById('loginOverlay').classList.contains('show')) return;
+  if (document.getElementById('movePickerOverlay')) return;
+
+  var key = e.key;
+
+  // Delete / Backspace — delete active or selected messages
+  if (key === 'Delete' || key === 'Backspace') {
+    e.preventDefault();
+    if (S.selected.size > 0) deleteUids(Array.from(S.selected));
+    else if (S.activeUid) deleteUids([S.activeUid]);
+    return;
+  }
+
+  // R — Reply
+  if (key === 'r' || key === 'R') {
+    if (S.activeMsg) replyMsg();
+    return;
+  }
+
+  // F — Forward
+  if (key === 'f' || key === 'F') {
+    if (S.activeMsg) forwardMsg();
+    return;
+  }
+
+  // E — Archive
+  if (key === 'e' || key === 'E') {
+    if (S.activeUid) archiveUid(S.activeUid);
+    return;
+  }
+
+  // J — Next message
+  if (key === 'j' || key === 'J') {
+    if (!S.messages.length) return;
+    var idx = -1;
+    for (var i = 0; i < S.messages.length; i++) { if (S.messages[i].id === S.activeUid) { idx = i; break; } }
+    if (idx < S.messages.length - 1) openMsg(S.messages[idx + 1].id);
+    return;
+  }
+
+  // K — Previous message
+  if (key === 'k' || key === 'K') {
+    if (!S.messages.length) return;
+    var idx = -1;
+    for (var i = 0; i < S.messages.length; i++) { if (S.messages[i].id === S.activeUid) { idx = i; break; } }
+    if (idx > 0) openMsg(S.messages[idx - 1].id);
+    return;
+  }
+
+  // S — Toggle favorite
+  if (key === 's' || key === 'S') {
+    if (S.activeUid) doStar(S.activeUid);
+    return;
+  }
+
+  // C — Compose
+  if (key === 'c' || key === 'C') {
+    openCompose();
+    return;
+  }
+
+  // ? — Show shortcuts help
+  if (key === '?') {
+    toast('⌨ Shortcuts: J/K nav | R reply | F fwd | E archive | S star | C compose | Del delete', 'success');
+    return;
+  }
+});
+
 document.getElementById('lPass').addEventListener('keydown', function(e) { if (e.key === 'Enter') doLogin(); });
 document.getElementById('lUser').addEventListener('keydown', function(e) { if (e.key === 'Enter') document.getElementById('lPass').focus(); });
 
