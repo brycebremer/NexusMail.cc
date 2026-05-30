@@ -348,6 +348,9 @@ function loadMessages() {
     S.msgTotal = r.total || 0;
     document.getElementById('folderTitle').textContent = S.folder;
     document.getElementById('folderCount').textContent = S.msgTotal ? S.msgTotal + ' messages' : '';
+    // Show/hide Empty Trash button
+    var etb = document.getElementById('emptyTrashBtn');
+    if (etb) etb.style.display = (S.folder === 'Trash') ? '' : 'none';
     renderMessages();
     // Seed notifiedUids with current message IDs on first load
     // so existing mail won't be treated as "new" when polling fires
@@ -560,6 +563,17 @@ function markReadSelected() {
       if (S.selected.has(S.messages[i].id)) S.messages[i].read = true;
     }
     S.selected.clear(); renderMessages(); renderFolders(); toast('Marked as read', 'success');
+  }).catch(function(e) { toast(e.message, 'error'); });
+}
+
+function emptyTrash() {
+  if (!confirm('Permanently delete all messages in Trash? This cannot be undone.')) return;
+  api('emptytrash', { method: 'POST' }).then(function(r) {
+    S.messages = [];
+    S.msgTotal = 0;
+    document.getElementById('msgView').innerHTML = '<div class="empty-state"><p>Trash emptied</p></div>';
+    renderMessages(); renderFolders();
+    toast(r.deleted ? 'Deleted ' + r.deleted + ' messages' : 'Trash is already empty', 'success');
   }).catch(function(e) { toast(e.message, 'error'); });
 }
 

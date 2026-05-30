@@ -389,6 +389,17 @@ async function searchMessages(folder, query) {
   return { messages: msgs, total: total, folder: folder, query: query };
 }
 
+async function emptyTrash() {
+  if (!imapClient) throw new Error('Not connected');
+  var mb = await imapClient.mailboxOpen('Trash');
+  var total = mb.exists || 0;
+  if (total === 0) { await imapClient.mailboxClose(); return { ok: true, deleted: 0 }; }
+  // Delete all messages (1:* in UID mode)
+  await imapClient.messageDelete('1:*', { uid: true });
+  await imapClient.mailboxClose();
+  return { ok: true, deleted: total };
+}
+
 async function markMessagesRead(fp, uids) {
   if (!imapClient) throw new Error('Not connected');
   await imapClient.mailboxOpen(fp);
@@ -481,6 +492,12 @@ app.get('/api/search', requireAuth, function(req, res) {
   var folder = req.query.folder || 'INBOX';
   if (!q) return res.json({ messages: [], total: 0 });
   searchMessages(folder, q).then(function(r) { res.json(r); }).catch(function(e) { res.status(400).json({ error: e.message }); });
+});
+
+// ── Empty Trash ──
+app.post('/api/emptytrash', requireAuth, function(req, res) {
+  if (!imapClient) return res.status(400).json({ error: 'Not connected' });
+  emptyTrash().then(function(r) { res.json(r); }).catch(function(e) { res.status(400).json({ error: e.message }); });
 });
 
 app.post('/api/move', requireAuth, function(req, res) {
