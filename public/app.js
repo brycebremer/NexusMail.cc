@@ -50,6 +50,7 @@ function folderIcon(f) {
   };
   if (f.specialUse && icons[f.specialUse]) return icons[f.specialUse];
   if (f.name === 'INBOX') return icons['\\Inbox'];
+  if (f.name === 'Favorites') return svg('<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>', 14);
   return svg('<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>');
 }
 
@@ -241,7 +242,7 @@ function loadFolders() {
 function isSpecialFolder(f) {
   if (f.specialUse) return true;
   var lower = f.path.toLowerCase();
-  return (lower === 'inbox' || lower === 'trash' || lower === 'sent' || lower === 'drafts' || lower === 'junk' || lower === 'spam');
+  return (lower === 'inbox' || lower === 'trash' || lower === 'sent' || lower === 'drafts' || lower === 'junk' || lower === 'spam' || lower === 'favorites');
 }
 
 function renderFolders() {
@@ -475,10 +476,30 @@ function toggleSel(uid) { S.selected.has(uid) ? S.selected.delete(uid) : S.selec
 function toggleSelectAll() { if (S.allSelected) { S.selected.clear(); S.allSelected = false; } else { for (var i=0;i<S.messages.length;i++) S.selected.add(S.messages[i].id); S.allSelected = true; } renderMessages(); }
 
 function doStar(uid, starred) {
-  api('star', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({folder:S.folder, uid:uid, starred:starred}) }).then(function() {
-    for (var i=0;i<S.messages.length;i++) { if (S.messages[i].id===uid) { S.messages[i].starred=starred; break; } }
-    renderMessages();
-  }).catch(function(e) { toast(e.message, 'error'); });
+  // Starring moves to Favorites folder, unstarring moves back to INBOX
+  if (starred) {
+    api('folders/create', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ name: 'Favorites' }) }).catch(function() {}).then(function() {
+      return api('move', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ folder: S.folder, dest: 'Favorites', uids: [uid] }) });
+    }).then(function() {
+      api('star', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ folder: 'Favorites', uid: uid, starred: true }) }).catch(function() {});
+      S.messages = S.messages.filter(function(m) { return m.id !== uid; });
+      if (S.activeUid === uid) {
+        S.activeUid = null; S.activeMsg = null;
+        document.getElementById('msgView').innerHTML = '<div class="empty-state"><p>Moved to Favorites</p></div>';
+      }
+      renderMessages(); renderFolders(); toast('Added to Favorites', 'success');
+    }).catch(function(e) { toast(e.message, 'error'); });
+  } else {
+    api('move', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ folder: S.folder, dest: 'INBOX', uids: [uid] }) }).then(function() {
+      api('star', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ folder: 'INBOX', uid: uid, starred: false }) }).catch(function() {});
+      S.messages = S.messages.filter(function(m) { return m.id !== uid; });
+      if (S.activeUid === uid) {
+        S.activeUid = null; S.activeMsg = null;
+        document.getElementById('msgView').innerHTML = '<div class="empty-state"><p>Removed from Favorites</p></div>';
+      }
+      renderMessages(); renderFolders(); toast('Removed from Favorites', 'success');
+    }).catch(function(e) { toast(e.message, 'error'); });
+  }
 }
 
 function deleteMsg() {
