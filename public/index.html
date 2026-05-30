@@ -13,7 +13,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 input,textarea,select{font-family:inherit;font-size:13px;color:var(--text);background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;outline:none;transition:border .15s}
 input:focus,textarea:focus{border-color:var(--accent)}textarea{resize:vertical}
 ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
-.app{display:grid;grid-template-columns:300px 3fr 2fr;grid-template-rows:50px 1fr;height:100vh}
+.app{display:grid;grid-template-columns:300px 3fr 2fr;grid-template-rows:58px 1fr;height:100vh}
 .topbar{grid-column:1/-1;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:12px}
 .sidebar{background:var(--surface);border-right:1px solid var(--border);overflow-y:auto;display:flex;flex-direction:column}
 .msglist{background:var(--surface2);border-right:1px solid var(--border);display:flex;flex-direction:column}
@@ -57,11 +57,11 @@ input:focus,textarea:focus{border-color:var(--accent)}textarea{resize:vertical}
 .star{cursor:pointer;transition:color .15s}.star.on{color:var(--warn)}.star:hover{opacity:.7}
 .empty-state{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;color:var(--text2);opacity:.6}
 .empty-state .icon{font-size:48px;margin-bottom:4px}.empty-state p{font-size:14px}
-.ev-header{padding:18px 22px 14px;border-bottom:1px solid var(--border);animation:fadeIn .2s ease}@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.ev-header{padding:18px 22px 14px;border-bottom:1px solid var(--border);animation:fadeIn .2s ease;max-width:720px;width:100%;margin:0 auto}@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
 .ev-header h2{font-size:18px;font-weight:600;margin-bottom:10px;line-height:1.35}
 .ev-meta{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--text2);line-height:1.6}
 .ev-meta .label{color:var(--text2);font-weight:600}.ev-meta .value{color:var(--text)}
-.ev-body{flex:1;padding:18px 22px;line-height:1.7;font-size:14px;white-space:pre-wrap;word-break:break-word}
+.ev-body{flex:1;padding:18px 22px;line-height:1.7;font-size:14px;white-space:pre-wrap;word-break:break-word;max-width:720px;width:100%;margin:0 auto}
 .ev-actions{padding:0 22px 14px;display:flex;gap:4px;flex-wrap:wrap}
 .loading{display:flex;align-items:center;justify-content:center;flex:1;gap:8px;color:var(--text2)}
 .spinner{width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite}
