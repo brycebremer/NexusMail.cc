@@ -936,3 +936,179 @@ function moveSelected() {
   if (!S.selected.size) return;
   showMovePicker(Array.from(S.selected), S.selected.size + ' messages');
 }
+// ── Rules Management ──
+
+function openRules() {
+  api('rules').then(function(rules) {
+    renderRulesModal(rules || []);
+  }).catch(function(e) { toast(e.message, 'error'); });
+}
+
+function renderRulesModal(rules) {
+  var html = '<div class="rules-overlay" id="rulesOverlay" onclick="if(event.target===this)closeRules()">';
+  html += '<div class="rules-modal">';
+  html += '<div class="rules-head">Mail Rules <button onclick="closeRules()">✕</button></div>';
+  html += '<div class="rules-list">';
+
+  if (!rules.length) {
+    html += '<div class="rules-empty">No rules yet. Click "Add Rule" to create one.</div>';
+  }
+
+  for (var i = 0; i < rules.length; i++) {
+    var r = rules[i];
+    html += '<div class="rule-card ' + (r.enabled ? '' : 'disabled') + '" data-id="' + r.id + '">';
+    html += '<div class="rule-header">';
+    html += '<span class="rule-name">' + esc(r.name) + '</span>';
+    html += '<div class="rule-actions">';
+    html += '<label class="rule-toggle"><input type="checkbox" ' + (r.enabled ? 'checked' : '') + ' onchange="toggleRule(\'' + r.id + '\', this.checked)"> ON</label>';
+    html += '<button class="btn btn-sm" onclick="editRule(\'' + r.id + '\')">Edit</button>';
+    html += '<button class="btn btn-sm btn-danger" onclick="removeRule(\'' + r.id + '\')">Delete</button>';
+    html += '</div></div>';
+    html += '<div class="rule-summary">' + ruleSummary(r) + '</div>';
+    html += '</div>';
+  }
+
+  html += '</div>';
+  html += '<div class="rules-foot">';
+  html += '<button class="btn btn-primary" onclick="addRule()">+ Add Rule</button>';
+  html += '<button class="btn" onclick="runRulesNow()">Run Rules Now</button>';
+  html += '</div></div></div>';
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+function ruleSummary(r) {
+  var parts = [];
+  var c = r.conditions || {};
+  if (c.from) parts.push('From: ' + c.from);
+  if (c.to) parts.push('To: ' + c.to);
+  if (c.attachment) parts.push('Attachment: ' + c.attachment);
+  if (c.timeAfter || c.timeBefore) parts.push('Time: ' + (c.timeAfter || '...') + '–' + (c.timeBefore || '...'));
+  var action = r.action === 'move' ? 'Move to ' + r.dest : r.action === 'delete' ? 'Delete' : 'Mark as read';
+  return (parts.length ? parts.join(' · ') : 'No conditions') + ' → ' + action;
+}
+
+function closeRules() {
+  var el = document.getElementById('rulesOverlay');
+  if (el) el.remove();
+}
+
+function addRule() {
+  closeRules();
+  showRuleEditor(null);
+}
+
+function editRule(id) {
+  api('rules').then(function(rules) {
+    var rule = null;
+    for (var i = 0; i < rules.length; i++) { if (rules[i].id === id) { rule = rules[i]; break; } }
+    closeRules();
+    if (rule) showRuleEditor(rule);
+  }).catch(function() {});
+}
+
+function showRuleEditor(rule) {
+  var isNew = !rule;
+  rule = rule || { name: '', conditions: {}, action: 'move', dest: '', enabled: true };
+
+  var html = '<div class="rules-overlay" id="ruleEditorOverlay" onclick="if(event.target===this)closeRuleEditor()">';
+  html += '<div class="rules-modal rule-editor">';
+  html += '<div class="rules-head">' + (isNew ? 'New Rule' : 'Edit Rule') + ' <button onclick="closeRuleEditor()">✕</button></div>';
+  html += '<div class="rule-form">';
+
+  html += '<div class="field"><label>Rule Name</label><input id="ruleName" value="' + esc(rule.name) + '" placeholder="e.g. Route support emails"></div>';
+
+  html += '<div class="rule-section-label">Conditions (all must match)</div>';
+
+  html += '<div class="field"><label>Sender email contains</label><input id="ruleFrom" value="' + esc(rule.conditions.from || '') + '" placeholder="e.g. noreply@github.com (comma-separated)"></div>';
+  html += '<div class="field"><label>Recipient email contains</label><input id="ruleTo" value="' + esc(rule.conditions.to || '') + '" placeholder="e.g. support@nexusmail.cc (comma-separated)"></div>';
+  html += '<div class="field"><label>Has attachment type</label><input id="ruleAttach" value="' + esc(rule.conditions.attachment || '') + '" placeholder="e.g. .pdf, .zip"></div>';
+
+  html += '<div class="field"><label>Received after (24h)</label><input id="ruleTimeAfter" value="' + esc(rule.conditions.timeAfter || '') + '" placeholder="e.g. 09:00"></div>';
+  html += '<div class="field"><label>Received before (24h)</label><input id="ruleTimeBefore" value="' + esc(rule.conditions.timeBefore || '') + '" placeholder="e.g. 17:00"></div>';
+
+  html += '<div class="rule-section-label">Action</div>';
+  html += '<div class="field"><label>Action</label><select id="ruleAction">';
+  html += '<option value="move"' + (rule.action === 'move' ? ' selected' : '') + '>Move to folder</option>';
+  html += '<option value="delete"' + (rule.action === 'delete' ? ' selected' : '') + '>Delete</option>';
+  html += '<option value="markread"' + (rule.action === 'markread' ? ' selected' : '') + '>Mark as read</option>';
+  html += '</select></div>';
+
+  html += '<div class="field" id="ruleDestField"><label>Destination folder</label><input id="ruleDest" value="' + esc(rule.dest || '') + '" placeholder="e.g. Support, Newsletter"></div>';
+
+  html += '</div>';
+  html += '<div class="rules-foot">';
+  html += '<button class="btn btn-primary" onclick="saveRuleEditor(\'' + (rule.id || '') + '\')">' + (isNew ? 'Create Rule' : 'Save Changes') + '</button>';
+  html += '<button class="btn" onclick="closeRuleEditor()">Cancel</button>';
+  html += '</div></div></div>';
+  document.body.insertAdjacentHTML('beforeend', html);
+
+  // Hide dest field unless action is move
+  var actionSel = document.getElementById('ruleAction');
+  actionSel.addEventListener('change', function() {
+    document.getElementById('ruleDestField').style.display = this.value === 'move' ? '' : 'none';
+  });
+  actionSel.dispatchEvent(new Event('change'));
+}
+
+function saveRuleEditor(id) {
+  var rule = {
+    name: document.getElementById('ruleName').value.trim(),
+    conditions: {
+      from: document.getElementById('ruleFrom').value.trim(),
+      to: document.getElementById('ruleTo').value.trim(),
+      attachment: document.getElementById('ruleAttach').value.trim(),
+      timeAfter: document.getElementById('ruleTimeAfter').value.trim(),
+      timeBefore: document.getElementById('ruleTimeBefore').value.trim()
+    },
+    action: document.getElementById('ruleAction').value,
+    dest: document.getElementById('ruleDest').value.trim(),
+    enabled: true
+  };
+
+  if (!rule.name) { toast('Rule name required', 'error'); return; }
+  if (rule.action === 'move' && !rule.dest) { toast('Destination folder required', 'error'); return; }
+  var hasCondition = rule.conditions.from || rule.conditions.to || rule.conditions.attachment || rule.conditions.timeAfter || rule.conditions.timeBefore;
+  if (!hasCondition) { toast('At least one condition required', 'error'); return; }
+
+  var method = id ? 'PUT' : 'POST';
+  var url = id ? 'rules/' + id : 'rules';
+  api(url, { method: method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(rule) }).then(function() {
+    closeRuleEditor();
+    toast(id ? 'Rule updated' : 'Rule created', 'success');
+    openRules();
+  }).catch(function(e) { toast(e.message, 'error'); });
+}
+
+function closeRuleEditor() {
+  var el = document.getElementById('ruleEditorOverlay');
+  if (el) el.remove();
+}
+
+function toggleRule(id, enabled) {
+  api('rules').then(function(rules) {
+    var rule = null;
+    for (var i = 0; i < rules.length; i++) { if (rules[i].id === id) { rule = rules[i]; break; } }
+    if (!rule) return;
+    rule.enabled = enabled;
+    api('rules/' + id, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(rule) }).then(function() {
+      toast(enabled ? 'Rule enabled' : 'Rule disabled', 'success');
+      closeRules(); openRules();
+    });
+  }).catch(function() {});
+}
+
+function removeRule(id) {
+  if (!confirm('Delete this rule?')) return;
+  api('rules/' + id, { method: 'DELETE' }).then(function() {
+    toast('Rule deleted', 'success');
+    closeRules(); openRules();
+  }).catch(function(e) { toast(e.message, 'error'); });
+}
+
+function runRulesNow() {
+  toast('Running rules...');
+  api('rules/apply', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ folder: S.folder || 'INBOX' }) }).then(function(r) {
+    toast(r.applied && r.applied.length ? 'Applied ' + r.applied.length + ' rule(s)' : 'No rules matched', 'success');
+    loadFolders(); loadMessages();
+  }).catch(function(e) { toast(e.message, 'error'); });
+}

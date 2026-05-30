@@ -3,6 +3,7 @@ const http = require('http');
 const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 const { ImapFlow } = require('imapflow');
+const { loadRules, saveRules, matchRule, applyRules, processRulesForFolder } = require('./rules-engine');
 const nodemailer = require('nodemailer');
 const path = require('path');
 
@@ -152,6 +153,10 @@ setInterval(function() {
     }
     if (changed.length > 0) {
       broadcast('imap:newMail', { paths: changed });
+      // Apply rules to changed folders
+      for (var i = 0; i < changed.length; i++) {
+        processRulesForFolder(changed[i], 5).catch(function() {});
+      }
     }
   }).catch(function() {});
 }, 15000);
@@ -492,6 +497,55 @@ app.get('/api/search', requireAuth, function(req, res) {
   var folder = req.query.folder || 'INBOX';
   if (!q) return res.json({ messages: [], total: 0 });
   searchMessages(folder, q).then(function(r) { res.json(r); }).catch(function(e) { res.status(400).json({ error: e.message }); });
+});
+
+// ── Rules ──
+app.get('/api/rules', requireAuth, function(req, res) {
+  res.json(loadRules());
+});
+
+app.post('/api/rules', requireAuth, function(req, res) {
+  var rules = loadRules();
+  var rule = req.body;
+  if (!rule || !rule.name) return res.status(400).json({ error: 'Rule name required' });
+  rule.id = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+  rule.enabled = rule.enabled !== false;
+  rule.conditions = rule.conditions || {};
+  rule.action = rule.action || 'move';
+  if (rule.action === 'move' && !rule.dest) return res.status(400).json({ error: 'Destination folder required for move action' });
+  rules.push(rule);
+  saveRules(rules);
+  res.json({ ok: true, rule: rule });
+});
+
+app.put('/api/rules/:id', requireAuth, function(req, res) {
+  var rules = loadRules();
+  var id = req.params.id;
+  var idx = -1;
+  for (var i = 0; i < rules.length; i++) { if (rules[i].id === id) { idx = i; break; } }
+  if (idx === -1) return res.status(404).json({ error: 'Rule not found' });
+  var updated = req.body;
+  updated.id = id;
+  updated.conditions = updated.conditions || {};
+  updated.action = updated.action || 'move';
+  rules[idx] = updated;
+  saveRules(rules);
+  res.json({ ok: true, rule: updated });
+});
+
+app.delete('/api/rules/:id', requireAuth, function(req, res) {
+  var rules = loadRules();
+  var id = req.params.id;
+  rules = rules.filter(function(r) { return r.id !== id; });
+  saveRules(rules);
+  res.json({ ok: true });
+});
+
+app.post('/api/rules/apply', requireAuth, function(req, res) {
+  var folder = req.body.folder || 'INBOX';
+  processRulesForFolder(folder, 20).then(function(applied) {
+    res.json({ ok: true, applied: applied });
+  }).catch(function(e) { res.status(400).json({ error: e.message }); });
 });
 
 // ── Empty Trash ──

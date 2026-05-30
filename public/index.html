@@ -107,6 +107,23 @@ input:focus,textarea:focus{border-color:var(--accent)}textarea{resize:vertical}
 .msg-menu-item svg{width:14px;height:14px;opacity:.6;flex-shrink:0}.msg-menu-item:hover svg{opacity:1}
 .msg-menu-sep{height:1px;background:var(--border);margin:4px 14px}
 .load-more{padding:14px;text-align:center;color:var(--text2);font-size:13px;cursor:pointer;transition:background .15s;border-top:1px solid var(--border)}.load-more:hover{background:var(--surface2);color:var(--text)}
+.rules-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:150;backdrop-filter:blur(4px)}
+.rules-modal{width:560px;max-height:80vh;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,.6)}
+.rules-head{padding:14px 18px;border-bottom:1px solid var(--border);font-weight:600;display:flex;align-items:center;justify-content:space-between}.rules-head button{background:none;border:none;color:var(--text2);font-size:18px;cursor:pointer}.rules-head button:hover{color:var(--text)}
+.rules-list{overflow-y:auto;flex:1;padding:8px}
+.rules-empty{padding:24px;text-align:center;color:var(--text2);font-size:13px}
+.rule-card{padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:6px;transition:border-color .15s}.rule-card:hover{border-color:var(--accent)}.rule-card.disabled{opacity:.5}
+.rule-header{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.rule-name{font-weight:600;font-size:13px}
+.rule-actions{display:flex;align-items:center;gap:6px}
+.rule-toggle{font-size:11px;color:var(--text2);cursor:pointer;display:flex;align-items:center;gap:4px}.rule-toggle input{accent-color:var(--accent)}
+.rule-summary{font-size:12px;color:var(--text2);margin-top:6px}
+.rules-foot{padding:12px 18px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center}
+.rule-form{padding:14px 18px;overflow-y:auto;flex:1}
+.rule-form .field{display:flex;flex-direction:column;gap:3px;margin-bottom:10px}
+.rule-form label{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.4px}
+.rule-form input,.rule-form select{width:100%;padding:7px 10px}
+.rule-section-label{font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.8px;margin:12px 0 8px;padding-top:8px;border-top:1px solid var(--border)}
 </style>
 </head>
 <body>
@@ -118,6 +135,7 @@ input:focus,textarea:focus{border-color:var(--accent)}textarea{resize:vertical}
       <input id="searchInput" type="text" placeholder="Search from, to, subject, body...">
     </div>
     <div class="topbar-right">
+      <button class="btn" onclick="openRules()" style="font-size:12px">⚙ Rules</button>
       <button class="btn btn-primary" onclick="openCompose()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Compose</button>
       <button class="icon-btn" onclick="refreshFolder()" title="Refresh" style="opacity:0.4;font-size:22px;transition:opacity .2s" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.4">↻</button>
       <button class="icon-btn" onclick="doLogout()" title="Logout" style="opacity:.4;font-size:18px;transition:opacity .2s" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=.4"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></button>
