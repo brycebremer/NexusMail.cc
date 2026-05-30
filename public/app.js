@@ -379,9 +379,7 @@ function loadMoreMessages() {
 }
 
 function renderMessages() {
-  var q = (document.getElementById('searchInput').value || '').toLowerCase();
   var msgs = S.messages;
-  if (q) msgs = msgs.filter(function(m) { return m.subject.toLowerCase().indexOf(q) >= 0 || m.from.toLowerCase().indexOf(q) >= 0; });
   if (!msgs.length) { document.getElementById('msgScroll').innerHTML = '<div class="empty-state"><p>No messages</p></div>'; return; }
   var html = '';
   for (var i = 0; i < msgs.length; i++) {
@@ -595,7 +593,35 @@ function doSend() {
   })}).then(function() { toast('Sent', 'success'); closeCompose(); }).catch(function(e) { toast(e.message, 'error'); });
 }
 
-document.getElementById('searchInput').addEventListener('input', function() { renderMessages(); });
+// ── Search: server-side with debounce ──
+var _searchTimer = null;
+document.getElementById('searchInput').addEventListener('input', function() {
+  var q = (this.value || '').trim();
+  clearTimeout(_searchTimer);
+  if (!q) {
+    // Empty search: reload current folder messages
+    S._searchMode = false;
+    loadMessages();
+    return;
+  }
+  // Debounce: wait 400ms after user stops typing
+  _searchTimer = setTimeout(function() { doSearch(q); }, 400);
+});
+
+function doSearch(q) {
+  S._searchMode = true;
+  var el = document.getElementById('msgScroll');
+  el.innerHTML = '<div class="loading"><div class="spinner"></div> Searching\u2026</div>';
+  api('search?q=' + encodeURIComponent(q) + '&folder=' + encodeURIComponent(S.folder)).then(function(r) {
+    S.messages = r.messages || [];
+    S.msgTotal = r.total || 0;
+    document.getElementById('folderTitle').textContent = 'Search: ' + q;
+    document.getElementById('folderCount').textContent = S.msgTotal ? S.msgTotal + ' results' : '';
+    renderMessages();
+  }).catch(function(e) {
+    el.innerHTML = '<div class="empty-state"><p>Search failed: ' + esc(e.message) + '</p></div>';
+  });
+}
 // ── Keyboard Shortcuts ──
 document.addEventListener('keydown', function(e) {
   // Ignore if typing in an input, textarea, or compose is open

@@ -352,6 +352,43 @@ async function moveMessages(src, dest, uids) {
   await imapClient.mailboxClose();
   return { ok: true };
 }
+async function searchMessages(folder, query) {
+  if (!imapClient) throw new Error('Not connected');
+  await imapClient.mailboxOpen(folder, { readOnly: true });
+  var uids = await imapClient.search({
+    or: [
+      { from: query },
+      { or: [
+        { subject: query },
+        { or: [
+          { to: query },
+          { body: query }
+        ]}
+      ]}
+    ]
+  }, { uid: true });
+  var total = uids ? uids.length : 0;
+  var msgs = [];
+  if (uids && uids.length > 0) {
+    // Fetch envelopes for up to 80 results (most recent first)
+    var fetchUids = uids.slice(-80).reverse();
+    for await (var msg of imapClient.fetch(fetchUids.join(','), { envelope: true, flags: true }, { uid: true })) {
+      msgs.push({
+        id: msg.uid,
+        from: (msg.envelope.from || []).map(function(a) { return a.address ? a.name + ' <' + a.address + '>' : (a.name || ''); }).join(', '),
+        to: (msg.envelope.to || []).map(function(a) { return a.address ? a.name + ' <' + a.address + '>' : (a.name || ''); }).join(', '),
+        subject: msg.envelope.subject || '(no subject)', date: msg.envelope.date,
+        flags: Array.from(msg.flags || []), starred: !!(msg.flags && msg.flags.has('\\Flagged')),
+        read: !(msg.flags && msg.flags.has('\\Seen')),
+        hasAttachments: false
+      });
+    }
+    msgs.reverse();
+  }
+  await imapClient.mailboxClose();
+  return { messages: msgs, total: total, folder: folder, query: query };
+}
+
 async function markMessagesRead(fp, uids) {
   if (!imapClient) throw new Error('Not connected');
   await imapClient.mailboxOpen(fp);
@@ -437,6 +474,15 @@ app.post('/api/folders/delete', requireAuth, function(req, res) {
 });
 
 // ── Move messages to folder ──
+// ── Search messages ──
+app.get('/api/search', requireAuth, function(req, res) {
+  if (!imapClient) return res.status(400).json({ error: 'Not connected' });
+  var q = (req.query.q || '').trim();
+  var folder = req.query.folder || 'INBOX';
+  if (!q) return res.json({ messages: [], total: 0 });
+  searchMessages(folder, q).then(function(r) { res.json(r); }).catch(function(e) { res.status(400).json({ error: e.message }); });
+});
+
 app.post('/api/move', requireAuth, function(req, res) {
   if (!imapClient) return res.status(400).json({ error: 'Not connected' });
   var src = req.body.folder;
