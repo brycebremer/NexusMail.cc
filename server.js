@@ -318,12 +318,28 @@ async function toggleStar(fp, uid, starred) {
 // Bug fix: added { uid: true } to messageFlagsAdd and iterate uids properly
 async function deleteMessages(fp, uids) {
   if (!imapClient) throw new Error('Not connected');
+  // If already in Trash, permanently delete
+  if (fp === 'Trash' || fp === 'INBOX.Trash' || fp.endsWith('/Trash')) {
+    await imapClient.mailboxOpen(fp);
+    for (var i = 0; i < uids.length; i++) {
+      await imapClient.messageDelete(uids[i], { uid: true });
+    }
+    await imapClient.mailboxClose();
+    return { ok: true, permanent: true };
+  }
+  // Otherwise, move to Trash
   await imapClient.mailboxOpen(fp);
   for (var i = 0; i < uids.length; i++) {
-    await imapClient.messageDelete(uids[i], { uid: true });
+    try {
+      await imapClient.messageMove(uids[i], 'Trash', { uid: true });
+    } catch (e) {
+      // If Trash folder doesn't exist, fall back to permanent delete
+      console.error('Move to Trash failed, deleting permanently:', e.message);
+      await imapClient.messageDelete(uids[i], { uid: true });
+    }
   }
   await imapClient.mailboxClose();
-  return { ok: true };
+  return { ok: true, moved: true };
 }
 
 async function markMessagesRead(fp, uids) {
