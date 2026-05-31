@@ -495,6 +495,58 @@ app.get('/api/peek', requireAuth, function(req, res) { peekMessage(req.query.fol
 app.post('/api/star', requireAuth, function(req, res) { toggleStar(req.body.folder, req.body.uid, req.body.starred).then(function(r) { res.json(r); }).catch(function(e) { res.status(400).json({ error: e.message }); }); });
 app.post('/api/delete', requireAuth, function(req, res) { deleteMessages(req.body.folder, req.body.uids).then(function(r) { res.json(r); }).catch(function(e) { res.status(400).json({ error: e.message }); }); });
 app.post('/api/markread', requireAuth, function(req, res) { markMessagesRead(req.body.folder, req.body.uids).then(function(r) { res.json(r); }).catch(function(e) { res.status(400).json({ error: e.message }); }); });
+
+// ── Drafts ──
+app.post('/api/drafts/save', requireAuth, function(req, res) {
+  if (!imapClient) return res.status(400).json({ error: 'Not connected' });
+  var to = req.body.to || '';
+  var cc = req.body.cc || '';
+  var subject = req.body.subject || '';
+  var text = req.body.text || '';
+  var html = req.body.html || '';
+  var draftUid = req.body.draftUid; // if editing existing draft
+  var from = config.imapUser;
+  // Build MIME message
+  var lines = [];
+  lines.push('From: ' + from);
+  if (to) lines.push('To: ' + to);
+  if (cc) lines.push('Cc: ' + cc);
+  lines.push('Subject: ' + subject);
+  lines.push('Date: ' + new Date().toUTCString());
+  lines.push('X-Draft: yes');
+  if (html) {
+    var boundary = '----=_Part_' + Date.now();
+    lines.push('Content-Type: multipart/alternative; boundary="' + boundary + '"');
+    lines.push('MIME-Version: 1.0');
+    lines.push('');
+    lines.push('--' + boundary);
+    lines.push('Content-Type: text/plain; charset=utf-8');
+    lines.push('Content-Transfer-Encoding: 7bit');
+    lines.push('');
+    lines.push(text);
+    lines.push('--' + boundary);
+    lines.push('Content-Type: text/html; charset=utf-8');
+    lines.push('Content-Transfer-Encoding: 7bit');
+    lines.push('');
+    lines.push(html);
+    lines.push('--' + boundary + '--');
+  } else {
+    lines.push('Content-Type: text/plain; charset=utf-8');
+    lines.push('');
+    lines.push(text);
+  }
+  var msgContent = lines.join('\r\n');
+  // Delete old draft if editing
+  var deletePromise = Promise.resolve();
+  if (draftUid) {
+    deletePromise = imapClient.messageDelete(draftUid, { uid: true }).catch(function() {});
+  }
+  deletePromise.then(function() {
+    return imapClient.append('Drafts', msgContent, ['\\Draft', '\\Seen']);
+  }).then(function(ret) {
+    res.json({ ok: true, uid: ret && ret.uid });
+  }).catch(function(e) { res.status(400).json({ error: e.message }); });
+});
 // Old /api/send replaced by multer version above
 
 

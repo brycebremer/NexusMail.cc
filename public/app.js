@@ -7,7 +7,9 @@ var S = {
   newUids: new Set,
   initialized: false,
   msgPage: 1, msgTotal: 0, msgLoading: false,
-  plainTextMode: false
+  plainTextMode: false,
+  draftUid: null, // UID of draft being edited (null = new compose)
+  draftAutoSave: null // auto-save timer
 };
 
 function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
@@ -546,6 +548,8 @@ function renderMessages() {
 }
 
 function openMsg(uid) {
+  // If in Drafts folder, open draft in compose instead
+  if (S.folder === 'Drafts') { openDraft(uid); return; }
   S.activeUid = uid;
   S.newUids.delete(uid);  // Clear new-message highlight when opened
   // Optimistically mark as read in local state
@@ -811,9 +815,16 @@ function acHide(dd) { dd.classList.remove('show'); dd.innerHTML = ''; acState.id
 acAttach('cTo', 'acTo');
 acAttach('cCc', 'acCc');
 
-function openCompose() { document.getElementById('composeOverlay').classList.add('show'); initEditor(); }
+function openCompose() {
+  S.draftUid = null;
+  document.getElementById('composeOverlay').classList.add('show'); initEditor();
+  startDraftAutoSave();
+}
 
-function closeCompose() {
+function closeCompose(opts) {
+  var skipSave = opts && opts.skipSave;
+  clearTimeout(S.draftAutoSave);
+  if (!skipSave) autoSaveDraft(true); // save before closing
   document.getElementById('composeOverlay').classList.remove('show');
   document.getElementById('cTo').value=''; document.getElementById('cCc').value='';
   document.getElementById('cSubj').value='';
@@ -825,6 +836,7 @@ function closeCompose() {
   window._composeFiles = [];
   var fl = document.getElementById('composeFileList');
   if (fl) fl.innerHTML = '';
+  S.draftUid = null;
 }
 function replyMsg() {
   if (!S.activeMsg) return; openCompose();
@@ -907,11 +919,89 @@ function doSend() {
     return r.json();
   }).then(function(j) {
     if (j.error) { toast(j.error, 'error'); throw new Error(j.error); }
-    toast('Sent', 'success'); closeCompose();
+    toast('Sent', 'success');
+    // Delete the draft if this was a draft compose
+    if (S.draftUid) {
+      api('delete', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ folder: 'Drafts', uids: [S.draftUid] }) }).catch(function() {});
+    }
+    closeCompose({ skipSave: true });
   }).catch(function(e) { toast(e.message, 'error'); });
 }
 
-// ── Search: server-side with debounce ──
+// ── Drafts ──
+function getComposeContent() {
+  var to = (document.getElementById('cTo').value || '').trim();
+  var cc = (document.getElementById('cCc').value || '').trim();
+  var subject = (document.getElementById('cSubj').value || '').trim();
+  var text = '', html = '';
+  if (S.plainTextMode) {
+    text = (document.getElementById('cBody').value || '').trim();
+  } else {
+    var ed = document.getElementById('cEditor');
+    html = (ed ? ed.innerHTML : '').trim();
+    var div = document.createElement('div');
+    div.innerHTML = html;
+    div.querySelectorAll('br').forEach(function(b) { b.replaceWith('\n'); });
+    div.querySelectorAll('p, div, li, blockquote').forEach(function(el) { el.insertAdjacentText('beforeend', '\n'); });
+    text = (div.textContent || div.innerText || '').trim();
+  }
+  return { to: to, cc: cc, subject: subject, text: text, html: html };
+}
+
+function hasComposeContent() {
+  var c = getComposeContent();
+  return c.to || c.subject || c.text;
+}
+
+function autoSaveDraft(isClose) {
+  if (!hasComposeContent()) return;
+  var c = getComposeContent();
+  // Skip if only a recipient with no body/subject (not worth saving)
+  if (!c.text && !c.subject) return;
+  api('drafts/save', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ to: c.to, cc: c.cc, subject: c.subject, text: c.text, html: c.html, draftUid: S.draftUid })
+  }).then(function(r) {
+    if (r.uid) S.draftUid = r.uid;
+    if (isClose) {
+      toast('Draft saved', 'success');
+    } else {
+      // Silent auto-save — show subtle indicator
+      var btn = document.getElementById('draftSaveBtn');
+      if (btn) btn.textContent = 'Saved ✓';
+      setTimeout(function() { if (btn) btn.textContent = 'Save Draft'; }, 2000);
+    }
+    loadFolders(); // refresh Drafts count
+  }).catch(function() {});
+}
+
+function startDraftAutoSave() {
+  clearTimeout(S.draftAutoSave);
+  S.draftAutoSave = setInterval(function() {
+    if (document.getElementById('composeOverlay').classList.contains('show') && hasComposeContent()) {
+      autoSaveDraft(false);
+    }
+  }, 30000); // auto-save every 30s
+}
+
+function openDraft(uid) {
+  api('message?folder=Drafts&uid=' + uid).then(function(m) {
+    S.draftUid = uid;
+    document.getElementById('composeOverlay').classList.add('show');
+    initEditor();
+    document.getElementById('cTo').value = m.to || '';
+    document.getElementById('cCc').value = m.cc || '';
+    document.getElementById('cSubj').value = m.subject || '';
+    var ed = document.getElementById('cEditor');
+    if (ed) {
+      if (m.htmlBody) ed.innerHTML = m.htmlBody;
+      else if (m.textBody) ed.innerHTML = esc(m.textBody).replace(/\n/g, '<br>');
+    }
+    startDraftAutoSave();
+  }).catch(function(e) { toast('Failed to load draft', 'error'); });
+}
+
+
 var _searchTimer = null;
 document.getElementById('searchInput').addEventListener('input', function() {
   var q = (this.value || '').trim();
