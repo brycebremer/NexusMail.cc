@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 const { ImapFlow } = require('imapflow');
 const { simpleParser } = require('mailparser');
-const { loadRules, saveRules, matchRule, applyRules, processRulesForFolder } = require('./rules-engine');
+const { loadRules, saveRules, matchRule, applyRules, processRulesForFolder, processRulesForUids } = require('./rules-engine');
 const nodemailer = require('nodemailer');
 const path = require('path');
 const multer = require('multer');
@@ -99,6 +99,31 @@ app.post('/api/login', function(req, res) {
 
     client.on('exists', function(data) {
       broadcast('imap:newMail', { path: data.path, count: data.count });
+      // Real-time rules: fetch new message UIDs and process immediately
+      if (data.path && data.count) {
+        (async function() {
+          try {
+            var mb = await client.mailboxOpen(data.path, { readOnly: false });
+            if (mb && mb.exists) {
+              // Fetch UIDs of the newest messages (last 3 to catch batch arrivals)
+              var start = Math.max(1, mb.exists - 2);
+              var newUids = [];
+              for await (var msg of client.fetch(mb.exists + ':' + start, ['uid'])) {
+                newUids.push(msg.uid);
+              }
+              await client.mailboxClose();
+              if (newUids.length) {
+                processRulesForUids(data.path, newUids).catch(function(e) {
+                  console.error('[Rules] Real-time error:', e.message);
+                });
+              }
+            }
+          } catch(e) {
+            console.error('[Rules] Exists handler error:', e.message);
+            try { await client.mailboxClose(); } catch(e2) {}
+          }
+        })();
+      }
     });
     client.on('flags', function(data) {
       broadcast('imap:flagsChanged', { path: data.path, uid: data.uid, flags: Array.from(data.flags || []) });
@@ -157,9 +182,10 @@ setInterval(function() {
     }
     if (changed.length > 0) {
       broadcast('imap:newMail', { paths: changed });
-      // Apply rules to changed folders
+      // Rules are now processed in real-time via IMAP exists event
+      // Fallback: process rules via poll only if exists event may have been missed
       for (var i = 0; i < changed.length; i++) {
-        processRulesForFolder(changed[i], 5).catch(function() {});
+        processRulesForFolder(changed[i], 3).catch(function() {});
       }
     }
   }).catch(function() {});

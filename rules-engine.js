@@ -35,6 +35,14 @@ function matchRule(rule, msg) {
     if (!match) return false;
   }
 
+  // Check subject
+  if (cond.subject) {
+    var subject = (msg.subject || '').toLowerCase();
+    var patterns = cond.subject.toLowerCase().split(',').map(function(s) { return s.trim(); });
+    var match = patterns.some(function(p) { return subject.indexOf(p) >= 0; });
+    if (!match) return false;
+  }
+
   // Check attachment type
   if (cond.attachment) {
     var hasAttach = msg.hasAttachments || (msg.bodyStructure && JSON.stringify(msg.bodyStructure).includes(cond.attachment.toLowerCase()));
@@ -90,7 +98,32 @@ async function applyRules(folder, messages) {
   return applied;
 }
 
-// Fetch recent messages and apply rules (called on new mail events)
+// Process rules for specific new UIDs (real-time, called from IMAP exists event)
+async function processRulesForUids(folder, uids) {
+  if (!imapClient || !uids || !uids.length) return [];
+  var rules = loadRules();
+  var enabled = rules.filter(function(r) { return r.enabled; });
+  if (!enabled.length) return [];
+  try {
+    var wasOpen = imapClient.mailbox && imapClient.mailbox.path === folder;
+    if (!wasOpen) await imapClient.mailboxOpen(folder, { readOnly: false });
+    var uidList = uids.join(',');
+    var messages = [];
+    for await (var msg of imapClient.fetch(uidList, { envelope: true, flags: true, bodyStructure: true }, { uid: true })) {
+      messages.push(msg);
+    }
+    var applied = await applyRules(folder, messages);
+    if (!wasOpen) { try { await imapClient.mailboxClose(); } catch(e2) {} }
+    if (applied.length) console.log('[Rules] Real-time applied', applied.length, 'rule(s) in', folder);
+    return applied;
+  } catch (e) {
+    console.error('processRulesForUids error:', e.message);
+    try { await imapClient.mailboxClose(); } catch(e2) {}
+    return [];
+  }
+}
+
+// Fetch recent messages and apply rules (fallback / manual "Run Rules Now")
 async function processRulesForFolder(folder, limit) {
   if (!imapClient) return [];
   var rules = loadRules();
@@ -115,4 +148,4 @@ async function processRulesForFolder(folder, limit) {
   }
 }
 
-module.exports = { loadRules, saveRules, matchRule, applyRules, processRulesForFolder };
+module.exports = { loadRules, saveRules, matchRule, applyRules, processRulesForFolder, processRulesForUids };
