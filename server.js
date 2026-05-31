@@ -18,7 +18,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // ── Session store with automatic cleanup ──
 const SESSIONS = new Map();
-const SESSION_MAX_AGE = 86400000; // 24h
+const SESSION_MAX_AGE = 86400000; // 24h (remember me)
+const SESSION_SHORT_AGE = 1800000; // 30 min (no remember)
 
 // Clean expired sessions every 10 minutes
 setInterval(function() {
@@ -92,7 +93,7 @@ app.post('/api/login', function(req, res) {
       auth: { user: mailUser, pass: password },
     });
     var sid = crypto.randomBytes(24).toString('hex');
-    SESSIONS.set(sid, { user: mailUser, pass: password, displayName: username, exp: Date.now() + SESSION_MAX_AGE });
+    SESSIONS.set(sid, { user: mailUser, pass: password, displayName: username, exp: Date.now() + (req.body.remember ? SESSION_MAX_AGE : SESSION_SHORT_AGE) });
     var isSecure = req.secure || req.headers['x-forwarded-proto'] === 'https';
     res.setHeader('Set-Cookie', 'mp=' + sid + '; Path=/; HttpOnly; SameSite=Strict' + (isSecure ? '; Secure' : ''));
 

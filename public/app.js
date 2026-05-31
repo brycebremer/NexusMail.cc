@@ -221,11 +221,12 @@ function hideLogin() { var el = document.getElementById('loginOverlay'); if (el)
 function doLogin() {
   var u = document.getElementById('lUser').value;
   var p = document.getElementById('lPass').value;
+  var remember = document.getElementById('lRemember').checked;
   if (!u || !p) { toast('Enter username and password', 'error'); return; }
   toast('Signing in...');
   api('login', {
     method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ username: u, password: p })
+    body: JSON.stringify({ username: u, password: p, remember: remember })
   }).then(function(r) {
     hideLogin(); toast('Connected to ' + r.user, 'success'); connectWS();
     requestNotifPermission();

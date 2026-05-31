@@ -84,6 +84,9 @@ input:focus,textarea:focus{border-color:var(--accent)}textarea{resize:vertical}
 .login-body .field{display:flex;flex-direction:column;gap:3px}
 .login-body label{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.4px}
 .login-body input{width:100%}
+.login-options{display:flex;justify-content:space-between;align-items:center}
+.remember-me{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);cursor:pointer;user-select:none}
+.remember-me input{width:auto;cursor:pointer}
 .toast-wrap{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:200;display:flex;flex-direction:column;gap:6px;align-items:center}
 .toast{background:var(--surface);border:1px solid var(--border);padding:10px 18px;border-radius:var(--radius);font-size:13px;opacity:0;transform:translateY(14px);transition:all .3s cubic-bezier(.4,0,.2,1);pointer-events:none;white-space:nowrap;backdrop-filter:blur(8px)}
 .toast.show{opacity:1;transform:translateY(0)}
@@ -211,6 +214,7 @@ input:focus,textarea:focus{border-color:var(--accent)}textarea{resize:vertical}
     <div class="login-body">
       <div class="field"><label>Username</label><input id="lUser" placeholder="Admin" autofocus></div>
       <div class="field"><label>Password</label><input id="lPass" type="password" placeholder="Password"></div>
+      <div class="login-options"><label class="remember-me"><input type="checkbox" id="lRemember" checked> Remember me</label></div>
       <button class="btn btn-primary" style="width:100%;justify-content:center;padding:10px" onclick="doLogin()">Sign In</button>
     </div>
   </div>
