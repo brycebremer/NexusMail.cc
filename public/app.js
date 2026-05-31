@@ -497,12 +497,28 @@ function loadMoreMessages() {
   if (S.messages.length >= S.msgTotal) return;
   S.msgLoading = true;
   S.msgPage++;
-  api('messages?folder=' + encodeURIComponent(S.folder) + '&limit=80&page=' + S.msgPage).then(function(r) {
-    var more = r.messages || [];
-    for (var i = 0; i < more.length; i++) {
-      var exists = false;
-      for (var j = 0; j < S.messages.length; j++) { if (S.messages[j].id === more[i].id) { exists = true; break; } }
-      if (!exists) S.messages.push(more[i]);
+  var endpoint = S.threadView
+    ? 'threads?folder=' + encodeURIComponent(S.folder) + '&limit=80&page=' + S.msgPage
+    : 'messages?folder=' + encodeURIComponent(S.folder) + '&limit=80&page=' + S.msgPage;
+  api(endpoint).then(function(r) {
+    if (S.threadView) {
+      var moreThreads = r.threads || [];
+      for (var i = 0; i < moreThreads.length; i++) {
+        var t = moreThreads[i];
+        // Check if this thread already exists
+        var exists = S.threads.some(function(et) { return et.messages[0] && t.messages[0] && et.messages[0].id === t.messages[0].id; });
+        if (!exists) {
+          S.threads.push(t);
+          S.messages.push(Object.assign({}, t.messages[0], { _thread: t }));
+        }
+      }
+    } else {
+      var more = r.messages || [];
+      for (var i = 0; i < more.length; i++) {
+        var exists = false;
+        for (var j = 0; j < S.messages.length; j++) { if (S.messages[j].id === more[i].id) { exists = true; break; } }
+        if (!exists) S.messages.push(more[i]);
+      }
     }
     S.msgLoading = false;
     renderMessages();
@@ -535,8 +551,10 @@ function renderMessages() {
     html += '</div></div></div>';
   }
   // Add load more button if there are more messages
-  if (S.messages.length < S.msgTotal) {
-    html += '<div class="load-more" onclick="loadMoreMessages()">Load more (' + (S.msgTotal - S.messages.length) + ' remaining)</div>';
+  var hasMore = S.threadView ? S.threads.length < S.msgTotal : S.messages.length < S.msgTotal;
+  if (hasMore) {
+    var remaining = S.threadView ? Math.max(0, S.msgTotal - S.threads.length) : (S.msgTotal - S.messages.length);
+    html += '<div class="load-more" onclick="loadMoreMessages()">Load more (' + remaining + ' remaining)</div>';
   }
   document.getElementById('msgScroll').innerHTML = html;
   var rows = document.querySelectorAll('.msg-row');
