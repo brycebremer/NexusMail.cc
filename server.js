@@ -268,6 +268,8 @@ async function listMessages(folderPath, page, limit) {
       flags: Array.from(msg.flags || []), starred: !!(msg.flags && msg.flags.has('\\Flagged')),
       read: !!(msg.flags && msg.flags.has('\\Seen')),
       hasAttachments: !!(msg.bodyStructure && JSON.stringify(msg.bodyStructure).includes('attachment')),
+      messageId: msg.envelope.messageId || null,
+      references: msg.envelope.inReplyTo || null,
     });
   }
   await imapClient.mailboxClose();
@@ -454,6 +456,78 @@ async function sendMail(opts) {
 app.get('/api/status', requireAuth, function(req, res) { res.json({ connected: !!imapClient, user: config ? config.imapUser : null, host: config ? config.imapHost : null }); });
 app.get('/api/folders', requireAuth, function(req, res) { listFolders().then(function(r) { res.json(r); }).catch(function(e) { res.status(400).json({ error: e.message }); }); });
 app.get('/api/messages', requireAuth, function(req, res) { listMessages(req.query.folder, req.query.page, req.query.limit).then(function(r) { res.json(r); }).catch(function(e) { res.status(400).json({ error: e.message }); }); });
+app.get('/api/threads', requireAuth, function(req, res) {
+  var folder = req.query.folder || 'INBOX';
+  var page = Number(req.query.page) || 1;
+  var limit = Number(req.query.limit) || 50;
+  listMessages(folder, page, limit).then(function(r) {
+    // Build thread groups from messages
+    var msgs = r.messages;
+    var msgById = {}; // messageId -> msg
+    var threads = []; // array of { id, subject, messages: [], lastDate }
+    var msgToThread = {}; // messageId -> thread index
+
+    // First pass: index by messageId
+    for (var i = 0; i < msgs.length; i++) {
+      if (msgs[i].messageId) msgById[msgs[i].messageId] = msgs[i];
+    }
+
+    // Second pass: group by references chain, then by subject
+    for (var i = 0; i < msgs.length; i++) {
+      var m = msgs[i];
+      var ref = m.references; // In-Reply-To header
+      var found = -1;
+      // Try to find a thread this message belongs to via In-Reply-To
+      if (ref) {
+        // The references field may contain multiple message IDs
+        var refIds = ref.split(/\s+/);
+        for (var j = refIds.length - 1; j >= 0; j--) {
+          var rid = refIds[j].trim();
+          if (msgToThread[rid] !== undefined) { found = msgToThread[rid]; break; }
+          // Also check if the referenced msg exists but isn't in a thread yet
+          if (msgById[rid] && !msgToThread[rid]) {
+            // Will be picked up when we process that message
+          }
+        }
+      }
+      // Fallback: match by subject (strip Re:/Fwd: prefixes)
+      if (found === -1) {
+        var cleanSubj = (m.subject || '').replace(/^(Re|Fwd|Fw)\s*:\s*/i, '').trim().toLowerCase();
+        for (var t = 0; t < threads.length; t++) {
+          var tSubj = (threads[t].subject || '').replace(/^(Re|Fwd|Fw)\s*:\s*/i, '').trim().toLowerCase();
+          if (cleanSubj && tSubj && cleanSubj === tSubj) { found = t; break; }
+        }
+      }
+      if (found >= 0) {
+        threads[found].messages.push(m);
+        if (m.messageId) msgToThread[m.messageId] = found;
+        if (new Date(m.date) > new Date(threads[found].lastDate)) threads[found].lastDate = m.date;
+        // Use the most recent subject (might have Re: prefix)
+        if (m.subject && m.subject.length > threads[found].subject.length) {
+          threads[found].subject = m.subject;
+        }
+      } else {
+        var tIdx = threads.length;
+        threads.push({ id: tIdx, subject: m.subject, messages: [m], lastDate: m.date, unread: 0 });
+        if (m.messageId) msgToThread[m.messageId] = tIdx;
+      }
+    }
+
+    // Compute unread counts and sort threads by lastDate desc
+    for (var t = 0; t < threads.length; t++) {
+      var ur = 0;
+      for (var m = 0; m < threads[t].messages.length; m++) {
+        if (!threads[t].messages[m].read) ur++;
+      }
+      threads[t].unread = ur;
+    }
+    threads.sort(function(a, b) { return new Date(b.lastDate) - new Date(a.lastDate); });
+    // Assign thread ids after sort
+    for (var t = 0; t < threads.length; t++) threads[t].id = t;
+
+    res.json({ threads: threads, total: r.total, page: page, limit: limit });
+  }).catch(function(e) { res.status(400).json({ error: e.message }); });
+});
 app.get('/api/message', requireAuth, function(req, res) { getMessage(req.query.folder, Number(req.query.uid)).then(function(r) { res.json(r); }).catch(function(e) { res.status(400).json({ error: e.message }); }); });
 
 // ── Attachment download ──

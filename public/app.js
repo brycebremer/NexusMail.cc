@@ -6,6 +6,8 @@ var S = {
   notifiedUids: new Set(),
   newUids: new Set,
   initialized: false,
+  threadView: false,
+  threads: [],
   msgPage: 1, msgTotal: 0, msgLoading: false,
   plainTextMode: false,
   draftUid: null, // UID of draft being edited (null = new compose)
@@ -410,6 +412,43 @@ function closeFolderMenu() {
   if (el) el.remove();
 }
 
+// ── Thread View ──
+function toggleThreadView() {
+  S.threadView = !S.threadView;
+  var btn = document.getElementById('threadToggle');
+  if (btn) btn.classList.toggle('active', S.threadView);
+  loadMessages();
+}
+
+function toggleThread(tid, row) {
+  var existing = document.getElementById('thread-' + tid);
+  if (existing) { existing.remove(); row.classList.remove('thread-open'); return; }
+  // Find the thread
+  var thread = null;
+  for (var i = 0; i < S.threads.length; i++) {
+    if (String(S.threads[i].id) === tid) { thread = S.threads[i]; break; }
+  }
+  if (!thread || thread.messages.length <= 1) return;
+  row.classList.add('thread-open');
+  var div = document.createElement('div');
+  div.id = 'thread-' + tid;
+  div.className = 'thread-expanded';
+  for (var i = 0; i < thread.messages.length; i++) {
+    var m = thread.messages[i];
+    var cls = 'thread-item' + (m.id === S.activeUid ? ' active' : '') + (!m.read ? ' unread' : '');
+    div.innerHTML += '<div class="' + cls + '" data-uid="' + m.id + '">' +
+      '<span class="ti-from">' + esc(m.from.split('<')[0].trim()) + '</span>' +
+      '<span class="ti-subj">' + esc(m.subject) + '</span>' +
+      '<span class="ti-date">' + fmtDate(m.date) + '</span>' +
+      '</div>';
+  }
+  row.parentNode.insertBefore(div, row.nextSibling);
+  // Wire click on thread items
+  div.querySelectorAll('.thread-item').forEach(function(el) {
+    el.addEventListener('click', function() { openMsg(parseInt(this.getAttribute('data-uid'))); });
+  });
+}
+
 function selectFolder(path) {
   S.folder = path; S.selected.clear(); S.activeUid = null; S.activeMsg = null; S.allSelected = false;
   renderFolders(); loadMessages();
@@ -420,9 +459,21 @@ function loadMessages() {
   S.msgPage = 1;
   var el = document.getElementById('msgScroll');
   el.innerHTML = '<div class="loading"><div class="spinner"></div> Loading\u2026</div>';
-  api('messages?folder=' + encodeURIComponent(S.folder) + '&limit=80&page=1').then(function(r) {
-    S.messages = r.messages || [];
-    S.msgTotal = r.total || 0;
+  var endpoint = S.threadView
+    ? 'threads?folder=' + encodeURIComponent(S.folder) + '&limit=80&page=1'
+    : 'messages?folder=' + encodeURIComponent(S.folder) + '&limit=80&page=1';
+  api(endpoint).then(function(r) {
+    if (S.threadView) {
+      S.threads = r.threads || [];
+      S.messages = [];
+      // Build flat list for compatibility (first msg of each thread)
+      S.messages = S.threads.map(function(t) { return Object.assign({}, t.messages[0], { _thread: t }); });
+      S.msgTotal = r.total || 0;
+    } else {
+      S.messages = r.messages || [];
+      S.threads = [];
+      S.msgTotal = r.total || 0;
+    }
     document.getElementById('folderTitle').textContent = S.folder;
     document.getElementById('folderCount').textContent = S.msgTotal ? S.msgTotal + ' messages' : '';
     // Show/hide Empty Trash button
@@ -465,15 +516,18 @@ function renderMessages() {
   for (var i = 0; i < msgs.length; i++) {
     var m = msgs[i];
     var isNew = S.newUids.has(m.id);
+    var isThread = S.threadView && m._thread && m._thread.messages.length > 1;
     var classes = 'msg-row';
     if (m.id === S.activeUid) classes += ' active';
     if (!m.read) classes += ' unread';
     if (isNew) classes += ' new-msg';
     if (S.selected.has(m.id)) classes += ' selected';
-    html += '<div class="' + classes + '" data-uid="' + m.id + '" draggable="true">';
+    if (isThread) classes += ' has-thread';
+    html += '<div class="' + classes + '" data-uid="' + m.id + '" data-thread-id="' + (isThread ? m._thread.id : '') + '" draggable="true">';
     html += '<div class="m-sel" data-uid="' + m.id + '">' + (S.selected.has(m.id) ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="var(--accent)" stroke="var(--accent)" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-5" stroke="#fff" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>' : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text2)" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>') + '</div>';
     html += '<span class="m-from">' + esc(m.from.split('<')[0].trim()) + '</span>';
-    html += '<span class="m-subj">' + esc(m.subject) + '</span>';
+    html += '<span class="m-subj">' + esc(m.subject) + (isThread ? ' <span class="thread-count">(' + m._thread.messages.length + ')</span>' : '') + '</span>';
+    if (isThread && m._thread.unread) html += '<span class="thread-unread">' + m._thread.unread + '</span>';
     html += '<div class="m-meta"><span class="m-date">' + fmtDate(m.date) + '</span>';
     var inFav = (S.folder === 'Favorites');
     html += '<div class="m-flags"><span class="star ' + (inFav?'on':'') + '" data-uid="' + m.id + '" data-starred="' + inFav + '" style="color:' + (inFav?'var(--warn)':'') + '">' + svg('<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',12) + '</span>';
@@ -488,8 +542,11 @@ function renderMessages() {
   var rows = document.querySelectorAll('.msg-row');
   for (var i = 0; i < rows.length; i++) {
     rows[i].addEventListener('click', function(e) {
-      if (e.target.closest('.star') || e.target.closest('.m-sel')) return;
+      if (e.target.closest('.star') || e.target.closest('.m-sel') || e.target.closest('.thread-expand')) return;
       var uid = parseInt(this.getAttribute('data-uid'));
+      var tid = this.getAttribute('data-thread-id');
+      // If in thread view and this is a thread, toggle expand
+      if (S.threadView && tid) { toggleThread(tid, this); return; }
       if (e.ctrlKey || e.metaKey) {
         toggleSel(uid);
       } else {
