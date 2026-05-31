@@ -951,8 +951,8 @@ function msgContextMenu(e, uid) {
   for (var i = 0; i < items.length; i++) {
     items[i].addEventListener('click', function() {
       var action = this.getAttribute('data-action');
-      if (action === 'reply') replyToUid(uid);
-      else if (action === 'forward') forwardUid(uid);
+      if (action === 'reply') fetchAndReply(uid);
+      else if (action === 'forward') fetchAndForward(uid);
       else if (action === 'archive') archiveUid(uid);
       else if (action === 'move') { S._moveUids = [uid]; showMovePicker([uid], '1 message'); }
       else if (action === 'star') doStar(uid);
@@ -968,27 +968,28 @@ function closeMsgMenu() {
   if (el) el.remove();
 }
 
-function replyToUid(uid) {
-  var msg = null;
-  for (var i = 0; i < S.messages.length; i++) { if (S.messages[i].id === uid) { msg = S.messages[i]; break; } }
-  if (!msg) { toast('Message not found', 'error'); return; }
-  openCompose();
-  var match = msg.from.match(/<(.+)>/);
-  document.getElementById('cTo').value = match ? match[1] : msg.from;
-  document.getElementById('cSubj').value = 'Re: ' + msg.subject.replace(/^Re: /,'');
-  document.getElementById('cEditor').innerHTML = '';
-  document.getElementById('cEditor').focus();
+function fetchAndReply(uid) {
+  var listMsg = null;
+  for (var i = 0; i < S.messages.length; i++) { if (S.messages[i].id === uid) { listMsg = S.messages[i]; break; } }
+  if (!listMsg) { toast('Message not found', 'error'); return; }
+  // If already loaded as activeMsg, use it directly
+  if (S.activeMsg && S.activeMsg.id === uid) { replyMsg(); return; }
+  // Otherwise fetch the full message then reply
+  api('message?folder=' + encodeURIComponent(S.folder) + '&uid=' + uid).then(function(m) {
+    S.activeMsg = m;
+    replyMsg();
+  }).catch(function() { toast('Failed to load message', 'error'); });
 }
 
-function forwardUid(uid) {
-  var msg = null;
-  for (var i = 0; i < S.messages.length; i++) { if (S.messages[i].id === uid) { msg = S.messages[i]; break; } }
-  if (!msg) { toast('Message not found', 'error'); return; }
-  openCompose();
-  document.getElementById('cTo').value = '';
-  document.getElementById('cSubj').value = 'Fwd: ' + msg.subject.replace(/^Fwd: /,'');
-  document.getElementById('cEditor').innerHTML = '';
-  document.getElementById('cEditor').focus();
+function fetchAndForward(uid) {
+  var listMsg = null;
+  for (var i = 0; i < S.messages.length; i++) { if (S.messages[i].id === uid) { listMsg = S.messages[i]; break; } }
+  if (!listMsg) { toast('Message not found', 'error'); return; }
+  if (S.activeMsg && S.activeMsg.id === uid) { forwardMsg(); return; }
+  api('message?folder=' + encodeURIComponent(S.folder) + '&uid=' + uid).then(function(m) {
+    S.activeMsg = m;
+    forwardMsg();
+  }).catch(function() { toast('Failed to load message', 'error'); });
 }
 
 function archiveUid(uid) {
