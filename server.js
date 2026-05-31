@@ -113,7 +113,7 @@ app.post('/api/login', function(req, res) {
               }
               await client.mailboxClose();
               if (newUids.length) {
-                processRulesForUids(data.path, newUids).catch(function(e) {
+                processRulesForUids(imapClient, data.path, newUids).catch(function(e) {
                   console.error('[Rules] Real-time error:', e.message);
                 });
               }
@@ -206,7 +206,7 @@ setInterval(function() {
       // Rules are now processed in real-time via IMAP exists event
       // Fallback: process rules via poll only if exists event may have been missed
       for (var i = 0; i < changed.length; i++) {
-        processRulesForFolder(changed[i], 3).catch(function() {});
+        processRulesForFolder(imapClient, changed[i], 3).catch(function() {});
       }
     }
   }).catch(function() {});
@@ -658,7 +658,7 @@ app.delete('/api/rules/:id', requireAuth, function(req, res) {
 
 app.post('/api/rules/apply', requireAuth, function(req, res) {
   var folder = req.body.folder || 'INBOX';
-  processRulesForFolder(folder, 20).then(function(applied) {
+  processRulesForFolder(imapClient, folder, 20).then(function(applied) {
     res.json({ ok: true, applied: applied });
   }).catch(function(e) { res.status(400).json({ error: e.message }); });
 });

@@ -69,7 +69,7 @@ function matchRule(rule, msg) {
 }
 
 // Apply rules to a list of messages in a folder
-async function applyRules(folder, messages) {
+async function applyRules(imap, folder, messages) {
   var rules = loadRules();
   var applied = [];
   for (var r = 0; r < rules.length; r++) {
@@ -80,13 +80,13 @@ async function applyRules(folder, messages) {
       if (matchRule(rule, msg)) {
         try {
           if (rule.action === 'move' && rule.dest && rule.dest !== folder) {
-            await imapClient.messageMove(msg.uid, rule.dest, { uid: true });
+            await imap.messageMove(msg.uid, rule.dest, { uid: true });
             applied.push({ rule: rule.name, uid: msg.uid, dest: rule.dest });
           } else if (rule.action === 'delete') {
-            await imapClient.messageDelete(msg.uid, { uid: true });
+            await imap.messageDelete(msg.uid, { uid: true });
             applied.push({ rule: rule.name, uid: msg.uid, action: 'deleted' });
           } else if (rule.action === 'markread') {
-            await imapClient.messageFlagsAdd(msg.uid, ['\\Seen'], { uid: true });
+            await imap.messageFlagsAdd(msg.uid, ['\\Seen'], { uid: true });
             applied.push({ rule: rule.name, uid: msg.uid, action: 'marked read' });
           }
         } catch (e) {
@@ -99,51 +99,51 @@ async function applyRules(folder, messages) {
 }
 
 // Process rules for specific new UIDs (real-time, called from IMAP exists event)
-async function processRulesForUids(folder, uids) {
-  if (!imapClient || !uids || !uids.length) return [];
+async function processRulesForUids(imap, folder, uids) {
+  if (!imap || !uids || !uids.length) return [];
   var rules = loadRules();
   var enabled = rules.filter(function(r) { return r.enabled; });
   if (!enabled.length) return [];
   try {
-    var wasOpen = imapClient.mailbox && imapClient.mailbox.path === folder;
-    if (!wasOpen) await imapClient.mailboxOpen(folder, { readOnly: false });
+    var wasOpen = imap.mailbox && imap.mailbox.path === folder;
+    if (!wasOpen) await imap.mailboxOpen(folder, { readOnly: false });
     var uidList = uids.join(',');
     var messages = [];
-    for await (var msg of imapClient.fetch(uidList, { envelope: true, flags: true, bodyStructure: true }, { uid: true })) {
+    for await (var msg of imap.fetch(uidList, { envelope: true, flags: true, bodyStructure: true }, { uid: true })) {
       messages.push(msg);
     }
-    var applied = await applyRules(folder, messages);
-    if (!wasOpen) { try { await imapClient.mailboxClose(); } catch(e2) {} }
+    var applied = await applyRules(imap, folder, messages);
+    if (!wasOpen) { try { await imap.mailboxClose(); } catch(e2) {} }
     if (applied.length) console.log('[Rules] Real-time applied', applied.length, 'rule(s) in', folder);
     return applied;
   } catch (e) {
     console.error('processRulesForUids error:', e.message);
-    try { await imapClient.mailboxClose(); } catch(e2) {}
+    try { await imap.mailboxClose(); } catch(e2) {}
     return [];
   }
 }
 
 // Fetch recent messages and apply rules (fallback / manual "Run Rules Now")
-async function processRulesForFolder(folder, limit) {
-  if (!imapClient) return [];
+async function processRulesForFolder(imap, folder, limit) {
+  if (!imap) return [];
   var rules = loadRules();
   if (!rules.length) return [];
   try {
-    await imapClient.mailboxOpen(folder, { readOnly: false });
-    var mb = imapClient.mailbox;
-    if (!mb || !mb.exists) { await imapClient.mailboxClose(); return []; }
+    await imap.mailboxOpen(folder, { readOnly: false });
+    var mb = imap.mailbox;
+    if (!mb || !mb.exists) { await imap.mailboxClose(); return []; }
     var total = mb.exists;
     var start = Math.max(1, total - (limit || 5) + 1);
     var messages = [];
-    for await (var msg of imapClient.fetch(total + ':' + start, { envelope: true, flags: true, bodyStructure: true }, { uid: true })) {
+    for await (var msg of imap.fetch(total + ':' + start, { envelope: true, flags: true, bodyStructure: true }, { uid: true })) {
       messages.push(msg);
     }
-    var applied = await applyRules(folder, messages);
-    await imapClient.mailboxClose();
+    var applied = await applyRules(imap, folder, messages);
+    await imap.mailboxClose();
     return applied;
   } catch (e) {
     console.error('processRules error:', e.message);
-    try { await imapClient.mailboxClose(); } catch(e2) {}
+    try { await imap.mailboxClose(); } catch(e2) {}
     return [];
   }
 }

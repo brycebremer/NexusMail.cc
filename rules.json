@@ -1,0 +1,16 @@
+[
+  {
+    "name": "EBT",
+    "conditions": {
+      "from": "msonlineservicesteam@microsoftonline.com",
+      "to": "",
+      "attachment": "",
+      "timeAfter": "",
+      "timeBefore": ""
+    },
+    "action": "move",
+    "dest": "EBT",
+    "enabled": true,
+    "id": "mptjks3ndmgh9"
+  }
+]
