@@ -6,10 +6,47 @@ var S = {
   notifiedUids: new Set(),
   newUids: new Set,
   initialized: false,
-  msgPage: 1, msgTotal: 0, msgLoading: false
+  msgPage: 1, msgTotal: 0, msgLoading: false,
+  plainTextMode: false
 };
 
 function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function formatSize(b) {
+  if (!b) return '';
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+  return (b/1048576).toFixed(1) + ' MB';
+}
+function fileIcon(name) {
+  var ext = (name || '').split('.').pop().toLowerCase();
+  var map = {pdf:'PDF',doc:'DOC',docx:'DOC',xls:'XLS',xlsx:'XLS',ppt:'PPT',pptx:'PPT',zip:'ZIP',rar:'ZIP','7z':'ZIP',tar:'ZIP',gz:'ZIP',jpg:'IMG',jpeg:'IMG',png:'IMG',gif:'IMG',svg:'IMG',webp:'IMG',mp3:'AUD',wav:'AUD',mp4:'VID',avi:'VID',mov:'VID',txt:'TXT',csv:'CSV',json:'JSON',html:'HTML'};
+  return map[ext] || 'ATT'
+  return map[ext] || '📎';
+}
+window._composeFiles = [];
+function handleComposeFiles(files) {
+  for (var i = 0; i < files.length; i++) {
+    window._composeFiles.push(files[i]);
+  }
+  renderComposeFiles();
+  document.getElementById('composeFileInput').value = '';
+}
+function removeComposeFile(index) {
+  window._composeFiles.splice(index, 1);
+  renderComposeFiles();
+}
+function renderComposeFiles() {
+  var bar = document.getElementById('composeAttBar');
+  var list = document.getElementById('composeFileList');
+  if (!window._composeFiles.length) { bar.style.display = 'none'; list.innerHTML = ''; return; }
+  bar.style.display = 'flex';
+  var html = '';
+  for (var i = 0; i < window._composeFiles.length; i++) {
+    var f = window._composeFiles[i];
+    html += '<span class="compose-att-item">' + fileIcon(f.name) + ' ' + esc(f.name) + ' <span style="color:var(--text2)">(' + formatSize(f.size) + ')</span><span class="att-rm" onclick="removeComposeFile(' + i + ')">×</span></span>';
+  }
+  list.innerHTML = html;
+}
 function fmtDate(d) {
   var dt = new Date(d), now = new Date();
   if (dt.toDateString() === now.toDateString()) return dt.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
@@ -118,8 +155,8 @@ function notifyNewMail(folderPath) {
 
     for (var i = 0; i < msgs.length; i++) {
       var m = msgs[i];
-      // m.read === true means UNREAD in this codebase (confusing but correct)
-      if (m.read && !S.notifiedUids.has(m.id)) {
+      // m.read === true means READ (has \Seen flag)
+      if (!m.read && !S.notifiedUids.has(m.id)) {
         S.notifiedUids.add(m.id);
         newMsgs.push(m);
       }
@@ -273,6 +310,43 @@ function renderFolders() {
       e.preventDefault();
       folderContextMenu(e, this.getAttribute('data-folder'));
     });
+    // Drag and drop: allow dropping messages on folders
+    items[i].addEventListener('dragover', function(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      this.classList.add('drop-target');
+    });
+    items[i].addEventListener('dragleave', function(e) {
+      // Only remove highlight if actually leaving the folder element
+      if (!this.contains(e.relatedTarget)) {
+        this.classList.remove('drop-target');
+      }
+    });
+    items[i].addEventListener('drop', function(e) {
+      e.preventDefault();
+      this.classList.remove('drop-target');
+      try {
+        var data = JSON.parse(e.dataTransfer.getData('text/plain'));
+        var dest = this.getAttribute('data-folder');
+        if (!data.uids || !data.uids.length) return;
+        // Don't drop on same folder
+        if (data.folder === dest) { toast('Already in this folder', 'error'); return; }
+        if (data.uids.length === 1) {
+          toast('Moving message to ' + dest + '…');
+        } else {
+          toast('Moving ' + data.uids.length + ' messages to ' + dest + '…');
+        }
+        api('move', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ folder: data.folder, dest: dest, uids: data.uids })
+        }).then(function(r) {
+          toast('Moved to ' + dest, 'success');
+          S.selected.clear();
+          loadFolders(); loadMessages();
+        }).catch(function(e) { toast(e.message, 'error'); });
+      } catch(ex) { /* not our drag data */ }
+    });
   }
 }
 
@@ -393,7 +467,7 @@ function renderMessages() {
     if (!m.read) classes += ' unread';
     if (isNew) classes += ' new-msg';
     if (S.selected.has(m.id)) classes += ' selected';
-    html += '<div class="' + classes + '" data-uid="' + m.id + '">';
+    html += '<div class="' + classes + '" data-uid="' + m.id + '" draggable="true">';
     html += '<div class="m-sel" data-uid="' + m.id + '">' + (S.selected.has(m.id) ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="var(--accent)" stroke="var(--accent)" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-5" stroke="#fff" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>' : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text2)" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>') + '</div>';
     html += '<span class="m-from">' + esc(m.from.split('<')[0].trim()) + '</span>';
     html += '<span class="m-subj">' + esc(m.subject) + '</span>';
@@ -422,6 +496,35 @@ function renderMessages() {
     rows[i].addEventListener('contextmenu', function(e) {
       e.preventDefault();
       msgContextMenu(e, parseInt(this.getAttribute('data-uid')));
+    });
+    // Drag start
+    rows[i].addEventListener('dragstart', function(e) {
+      var uid = this.getAttribute('data-uid');
+      // If messages are selected, drag all selected. Otherwise drag just this one.
+      var uids;
+      if (S.selected.size > 0 && S.selected.has(parseInt(uid))) {
+        uids = Array.from(S.selected);
+      } else {
+        uids = [parseInt(uid)];
+      }
+      e.dataTransfer.setData('text/plain', JSON.stringify({ folder: S.folder, uids: uids }));
+      e.dataTransfer.effectAllowed = 'move';
+      this.classList.add('dragging');
+      // Create drag image showing count
+      if (uids.length > 1) {
+        var ghost = document.createElement('div');
+        ghost.textContent = uids.length + ' messages';
+        ghost.style.cssText = 'position:fixed;top:-100px;left:-100px;background:var(--surface);color:var(--text);padding:6px 12px;border-radius:6px;font-size:13px;border:1px solid var(--border);box-shadow:0 4px 12px rgba(0,0,0,.4)';
+        document.body.appendChild(ghost);
+        e.dataTransfer.setDragImage(ghost, 0, 0);
+        setTimeout(function() { ghost.remove(); }, 0);
+      }
+    });
+    rows[i].addEventListener('dragend', function() {
+      this.classList.remove('dragging');
+      // Clean up any folder highlights
+      var items = document.querySelectorAll('#folders .folder');
+      for (var j = 0; j < items.length; j++) items[j].classList.remove('drop-target');
     });
   }
   var sels = document.querySelectorAll('.m-sel');
@@ -452,11 +555,28 @@ function openMsg(uid) {
 
     var bodyContent;
     if (m.htmlBody) {
-      bodyContent = '<div style="padding:4px 22px"><button class="btn btn-sm" id="toggleHtmlBtn">View as HTML</button></div>' +
-        '<div class="ev-body">' + esc(m.textBody || 'No content') + '</div>' +
-        '<iframe id="htmlFrame" sandbox="allow-same-origin" style="display:none;width:calc(100% - 44px);border:none;margin:0 22px;background:#fff;border-radius:4px"></iframe>';
+      S.showHtml = true;
+      bodyContent = '<div class="ev-body" style="display:none">' + esc(m.textBody || 'No content') + '</div>' +
+        '<iframe id="htmlFrame" sandbox="allow-same-origin" style="width:calc(100% - 44px);border:none;margin:0 22px;background:#fff;border-radius:4px"></iframe>';
     } else {
       bodyContent = '<div class="ev-body">' + esc(m.textBody || 'No content') + '</div>';
+    }
+
+    // Attachments
+    var attachHtml = '';
+    if (m.attachments && m.attachments.length) {
+      attachHtml = '<div class="ev-attachments"><div class="ev-attachments-label">' + m.attachments.length + ' attachment' + (m.attachments.length > 1 ? 's' : '') + '</div>';
+      for (var ai = 0; ai < m.attachments.length; ai++) {
+        var att = m.attachments[ai];
+        var icon = fileIcon(att.name || att.contentType);
+        var size = formatSize(att.size);
+        var dlUrl = '/api/attachment?folder=' + encodeURIComponent(S.folder) + '&uid=' + uid + '&index=' + ai;
+        attachHtml += '<a class="ev-att" href="' + dlUrl + '" download="" target="_blank">' +
+          '<span class="ev-att-icon">' + icon + '</span>' +
+          '<span class="ev-att-info"><span class="ev-att-name">' + esc(att.name || 'attachment') + '</span><span class="ev-att-size">' + size + '</span></span>' +
+          '<span class="ev-att-dl">' + svg('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>', 14) + '</span></a>';
+      }
+      attachHtml += '</div>';
     }
 
     el.innerHTML = '<div class="ev-header"><h2>' + esc(m.subject) + '</h2>' +
@@ -467,27 +587,37 @@ function openMsg(uid) {
       '<div class="ev-actions"><button class="btn btn-sm" onclick="replyMsg()">' + svg('<polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/>',14) + ' Reply</button>' +
       '<button class="btn btn-sm" onclick="forwardMsg()">' + svg('<polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/>',14) + ' Forward</button>' +
       '<button class="btn btn-sm" onclick="moveMsg()">' + svg('<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><polyline points="12 11 12 17"/><polyline points="9 14 12 11 15 14"/>',14) + ' Move</button>' +
-      '<button class="btn btn-sm btn-danger" onclick="deleteMsg()">' + svg('<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',14) + ' Delete</button></div>' +
-      bodyContent;
+      '<button class="btn btn-sm btn-danger" onclick="deleteMsg()">' + svg('<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',14) + ' Delete</button>' +
+      '<button class="btn btn-sm" id="toggleHtmlBtn" style="margin-left:auto;color:var(--text2);font-size:11px">View as Text</button></div>' +
+      bodyContent + attachHtml;
 
     var toggleBtn = document.getElementById('toggleHtmlBtn');
-    var htmlFrame = document.getElementById('htmlFrame');
+    if (toggleBtn) toggleBtn.style.color = 'var(--text2)';
+ var htmlFrame = document.getElementById('htmlFrame');
     if (toggleBtn && htmlFrame) {
+      // Write HTML into iframe immediately (shown by default)
+      var doc = htmlFrame.contentDocument || htmlFrame.contentWindow.document;
+      doc.open(); doc.write('<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;font-size:14px;line-height:1.6;color:#222;margin:0;padding:8px 4px;word-break:break-word}a{color:#a8324a}blockquote{border-left:3px solid #ccc;margin:8px 0;padding:4px 12px;color:#666}img{max-width:100%;height:auto}pre{overflow-x:auto}</style></head><body>' + m.htmlBody + '</body></html>'); doc.close();
+      setTimeout(function() {
+        try { htmlFrame.style.height = (doc.body.scrollHeight + 20) + 'px'; } catch(e) {}
+      }, 150);
+      // Retry after images load
+      setTimeout(function() {
+        try { htmlFrame.style.height = (doc.body.scrollHeight + 20) + 'px'; } catch(e) {}
+      }, 1000);
       toggleBtn.addEventListener('click', function() {
         if (!S.showHtml) {
-          var doc = htmlFrame.contentDocument || htmlFrame.contentWindow.document;
-          doc.open(); doc.write(m.htmlBody); doc.close();
           htmlFrame.style.display = 'block';
-          setTimeout(function() {
-            try { htmlFrame.style.height = doc.body.scrollHeight + 20 + 'px'; } catch(e) {}
-          }, 100);
+          try { htmlFrame.style.height = (doc.body.scrollHeight + 20) + 'px'; } catch(e) {}
           document.querySelector('.ev-body').style.display = 'none';
           toggleBtn.textContent = 'View as Text';
+          toggleBtn.style.color = 'var(--text2)';
           S.showHtml = true;
         } else {
           htmlFrame.style.display = 'none';
           document.querySelector('.ev-body').style.display = '';
           toggleBtn.textContent = 'View as HTML';
+          toggleBtn.style.color = 'var(--accent)';
           S.showHtml = false;
         }
       });
@@ -579,32 +709,103 @@ function emptyTrash() {
 
 function refreshFolder() { if (S.folder) loadFolders(); }
 
-function openCompose() { document.getElementById('composeOverlay').classList.add('show'); }
+function openCompose() { document.getElementById('composeOverlay').classList.add('show'); initEditor(); }
 function closeCompose() {
   document.getElementById('composeOverlay').classList.remove('show');
   document.getElementById('cTo').value=''; document.getElementById('cCc').value='';
-  document.getElementById('cSubj').value=''; document.getElementById('cBody').value='';
+  document.getElementById('cSubj').value='';
+  var ed = document.getElementById('cEditor');
+  if (ed) ed.innerHTML = '';
+  document.getElementById('cBody').value = '';
+  S.plainTextMode = false;
+  setEditorMode(false);
+  window._composeFiles = [];
+  var fl = document.getElementById('composeFileList');
+  if (fl) fl.innerHTML = '';
 }
 function replyMsg() {
   if (!S.activeMsg) return; openCompose();
   var match = S.activeMsg.from.match(/<(.+)>/);
   document.getElementById('cTo').value = match ? match[1] : S.activeMsg.from;
   document.getElementById('cSubj').value = 'Re: ' + S.activeMsg.subject.replace(/^Re: /,'');
-  document.getElementById('cBody').value = '\n\n---\n' + (S.activeMsg.textBody||'');
+  var ed = document.getElementById('cEditor');
+  var date = new Date(S.activeMsg.date).toLocaleString();
+  var quoteFrom = esc(S.activeMsg.from);
+  if (S.activeMsg.htmlBody) {
+    ed.innerHTML = '<br><br><blockquote style="border-left:3px solid #2e272a;margin:8px 0;padding:4px 12px;color:#948a8c">On ' + esc(date) + ', ' + quoteFrom + ' wrote:<br>' + S.activeMsg.htmlBody + '</blockquote>';
+  } else {
+    ed.innerHTML = '<br><br><blockquote style="border-left:3px solid #2e272a;margin:8px 0;padding:4px 12px;color:#948a8c">On ' + esc(date) + ', ' + quoteFrom + ' wrote:<br>' + esc(S.activeMsg.textBody||'').replace(/\n/g, '<br>') + '</blockquote>';
+  }
+  ed.focus();
+  var range = document.createRange();
+  range.setStart(ed, 0);
+  range.collapse(true);
+  var sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
 }
 function forwardMsg() {
   if (!S.activeMsg) return; openCompose();
   document.getElementById('cSubj').value = 'Fwd: ' + S.activeMsg.subject.replace(/^Fwd: /,'');
-  document.getElementById('cBody').value = '\n\n--- Forwarded ---\nFrom: '+S.activeMsg.from+'\n\n'+(S.activeMsg.textBody||'');
+  var ed = document.getElementById('cEditor');
+  var fwdHeader = '---------- Forwarded message ----------<br>From: ' + esc(S.activeMsg.from) + '<br>Date: ' + esc(new Date(S.activeMsg.date).toLocaleString()) + '<br>Subject: ' + esc(S.activeMsg.subject) + '<br><br>';
+  if (S.activeMsg.htmlBody) {
+    ed.innerHTML = '<br><br>' + fwdHeader + S.activeMsg.htmlBody;
+  } else {
+    ed.innerHTML = '<br><br>' + fwdHeader + esc(S.activeMsg.textBody||'').replace(/\n/g, '<br>');
+  }
+  ed.focus();
+  var range = document.createRange();
+  range.setStart(ed, 0);
+  range.collapse(true);
+  var sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
 }
 function doSend() {
   var to = document.getElementById('cTo').value;
   if (!to) { toast('Add a recipient', 'error'); return; }
-  api('send', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({
-    to: to, cc: document.getElementById('cCc').value,
-    subject: document.getElementById('cSubj').value,
-    text: document.getElementById('cBody').value
-  })}).then(function() { toast('Sent', 'success'); closeCompose(); }).catch(function(e) { toast(e.message, 'error'); });
+  var text, html;
+  if (S.plainTextMode) {
+    text = document.getElementById('cBody').value;
+    html = null;
+  } else {
+    var ed = document.getElementById('cEditor');
+    html = ed.innerHTML;
+    var div = document.createElement('div');
+    div.innerHTML = html;
+    div.querySelectorAll('br').forEach(function(b) { b.replaceWith('\n'); });
+    div.querySelectorAll('p, div, li, blockquote, h1, h2, h3, h4, h5, h6').forEach(function(el) {
+      el.insertAdjacentText('beforeend', '\n');
+    });
+    text = (div.textContent || div.innerText || '').replace(/\n{3,}/g, '\n\n').trim();
+    var tempDiv = document.createElement('div');
+    tempDiv.innerHTML = html;
+    var hasFormatting = tempDiv.querySelector('b,i,u,s,a,ul,ol,blockquote,h1,h2,h3,li,em,strong,center');
+    if (!hasFormatting && html.replace(/<br\s*\/?>/gi,'\n').replace(/<div>/gi,'n').replace(/<\/div>/gi,'').replace(/<[^>]+>/g,'').trim() === text) {
+      html = null;
+    }
+  }
+  // Use FormData to support file attachments
+  var fd = new FormData();
+  fd.append('to', to);
+  fd.append('cc', document.getElementById('cCc').value);
+  fd.append('subject', document.getElementById('cSubj').value);
+  fd.append('text', text);
+  if (html) fd.append('html', html);
+  // Add attachments
+  if (window._composeFiles && window._composeFiles.length) {
+    for (var i = 0; i < window._composeFiles.length; i++) {
+      fd.append('attachments', window._composeFiles[i]);
+    }
+  }
+  fetch('/api/send', { method: 'POST', credentials: 'include', body: fd }).then(function(r) {
+    if (r.status === 401) { showLogin(); throw new Error('Auth required'); }
+    return r.json();
+  }).then(function(j) {
+    if (j.error) { toast(j.error, 'error'); throw new Error(j.error); }
+    toast('Sent', 'success'); closeCompose();
+  }).catch(function(e) { toast(e.message, 'error'); });
 }
 
 // ── Search: server-side with debounce ──
@@ -774,7 +975,8 @@ function replyToUid(uid) {
   var match = msg.from.match(/<(.+)>/);
   document.getElementById('cTo').value = match ? match[1] : msg.from;
   document.getElementById('cSubj').value = 'Re: ' + msg.subject.replace(/^Re: /,'');
-  document.getElementById('cBody').value = '';
+  document.getElementById('cEditor').innerHTML = '';
+  document.getElementById('cEditor').focus();
 }
 
 function forwardUid(uid) {
@@ -784,7 +986,8 @@ function forwardUid(uid) {
   openCompose();
   document.getElementById('cTo').value = '';
   document.getElementById('cSubj').value = 'Fwd: ' + msg.subject.replace(/^Fwd: /,'');
-  document.getElementById('cBody').value = '';
+  document.getElementById('cEditor').innerHTML = '';
+  document.getElementById('cEditor').focus();
 }
 
 function archiveUid(uid) {
@@ -1111,4 +1314,98 @@ function runRulesNow() {
     toast(r.applied && r.applied.length ? 'Applied ' + r.applied.length + ' rule(s)' : 'No rules matched', 'success');
     loadFolders(); loadMessages();
   }).catch(function(e) { toast(e.message, 'error'); });
+}
+
+
+// ── Rich Text Editor ──
+var _editorInited = false;
+function initEditor() {
+  if (_editorInited) return;
+  _editorInited = true;
+  var toolbar = document.getElementById('editorToolbar');
+  if (!toolbar) return;
+  var buttons = toolbar.querySelectorAll('button[data-cmd]');
+  for (var i = 0; i < buttons.length; i++) {
+    buttons[i].addEventListener('mousedown', function(e) {
+      e.preventDefault();
+      var cmd = this.getAttribute('data-cmd');
+
+      if (cmd === 'createLink') {
+        var sel = window.getSelection();
+        if (sel.rangeCount > 0 && !sel.isCollapsed) {
+          var url = prompt('Enter URL:');
+          if (url) document.execCommand('createLink', false, url);
+        } else {
+          toast('Select text to link', 'error');
+        }
+        return;
+      }
+      document.execCommand(cmd, false, null);
+      updateToolbarState();
+    });
+  }
+  document.addEventListener('selectionchange', function() {
+    var ed = document.getElementById('cEditor');
+    if (ed && (ed.contains(document.activeElement) || (window.getSelection().rangeCount > 0 && ed.contains(window.getSelection().anchorNode)))) {
+      updateToolbarState();
+    }
+  });
+}
+
+function updateToolbarState() {
+  var toolbar = document.getElementById('editorToolbar');
+  if (!toolbar) return;
+  var buttons = toolbar.querySelectorAll('button[data-cmd]');
+  var stateCmds = ['bold','italic','underline','strikeThrough','insertUnorderedList','insertOrderedList','justifyLeft','justifyCenter','justifyRight'];
+  for (var i = 0; i < buttons.length; i++) {
+    var cmd = buttons[i].getAttribute('data-cmd');
+    if (stateCmds.indexOf(cmd) >= 0) {
+      try {
+        buttons[i].classList.toggle('active', document.queryCommandState(cmd));
+      } catch(e) {}
+    }
+  }
+}
+
+function toggleEditorMode() {
+  S.plainTextMode = !S.plainTextMode;
+  setEditorMode(S.plainTextMode);
+}
+
+function setEditorMode(plain) {
+  var ed = document.getElementById('cEditor');
+  var tb = document.getElementById('cBody');
+  var toolbar = document.getElementById('editorToolbar');
+  var modeBar = document.getElementById('editorModeBar');
+  var modeRich = document.getElementById('modeRich');
+  var modePlain = document.getElementById('modePlain');
+  S.plainTextMode = plain;
+  if (plain) {
+    if (ed) {
+      var div = document.createElement('div');
+      div.innerHTML = ed.innerHTML;
+      div.querySelectorAll('br').forEach(function(b) { b.replaceWith('\n'); });
+      div.querySelectorAll('p, div, li, blockquote').forEach(function(el) { el.insertAdjacentText('beforeend', '\n'); });
+      tb.value = (div.textContent || '').replace(/\n{3,}/g, '\n\n').trim();
+    }
+    if (ed) ed.style.display = 'none';
+    tb.style.display = '';
+    if (toolbar) { toolbar.style.opacity = '0.4'; toolbar.style.pointerEvents = 'none'; }
+    if (modeBar) { modeBar.style.display = 'flex'; }
+    if (modeRich) modeRich.classList.remove('active');
+    if (modePlain) modePlain.classList.add('active');
+  } else {
+    if (tb.value) {
+      ed.innerHTML = tb.value.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\n/g, '<br>');
+    }
+    if (ed) ed.style.display = '';
+    tb.style.display = 'none';
+    if (toolbar) { toolbar.style.opacity = ''; toolbar.style.pointerEvents = ''; }
+    if (modeBar) { modeBar.style.display = 'flex'; }
+    if (modeRich) modeRich.classList.add('active');
+    if (modePlain) modePlain.classList.remove('active');
+  }
+}
+
+  }
 }

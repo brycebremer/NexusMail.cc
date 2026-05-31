@@ -75,7 +75,7 @@ input:focus,textarea:focus{border-color:var(--accent)}textarea{resize:vertical}
 .compose-body .field{display:flex;flex-direction:column;gap:3px}
 .compose-body label{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.4px}
 .compose-body input,.compose-body textarea{width:100%}
-.compose-body textarea{flex:1;min-height:340px;line-height:1.6;font-size:14px}
+/* compose textarea replaced by editor */
 .compose-foot{padding:12px 18px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
 .login-box{width:380px;background:var(--surface);border-radius:var(--radius);display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,.6)}
 .login-head{padding:24px 24px 8px;text-align:center}
@@ -124,6 +124,43 @@ input:focus,textarea:focus{border-color:var(--accent)}textarea{resize:vertical}
 .rule-form label{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.4px}
 .rule-form input,.rule-form select{width:100%;padding:7px 10px}
 .rule-section-label{font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.8px;margin:12px 0 8px;padding-top:8px;border-top:1px solid var(--border)}
+
+.editor-field{display:flex;flex-direction:column;gap:3px;flex:1;min-height:0}
+.editor-toolbar{display:flex;align-items:center;gap:2px;padding:4px 6px;background:var(--bg);border:1px solid var(--border);border-bottom:none;border-radius:var(--radius-sm) var(--radius-sm) 0 0;flex-wrap:wrap}
+.editor-toolbar button{width:28px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:3px;font-size:13px;color:var(--text2);background:none;border:none;cursor:pointer;transition:all .12s}
+.editor-toolbar button:hover{background:var(--surface2);color:var(--text)}
+.editor-toolbar button.active{background:var(--accent-bg);color:var(--accent)}
+.editor-mode-bar{display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-top:none;border-radius:0;font-size:12px;color:var(--text2)}
+.editor-mode-bar .mode-switch{display:flex;background:var(--surface2);border-radius:4px;overflow:hidden;border:1px solid var(--border)}
+.editor-mode-bar .mode-opt{padding:4px 10px;cursor:pointer;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;transition:all .15s;color:var(--text2);user-select:none}
+.editor-mode-bar .mode-opt:hover{color:var(--text)}
+.editor-mode-bar .mode-opt.active{background:var(--accent);color:#fff}
+.tb-sep{width:1px;height:18px;background:var(--border);margin:0 3px;flex-shrink:0}
+.editor-wrap{flex:1;display:flex;flex-direction:column;border:1px solid var(--border);border-top:none;border-radius:0 0 var(--radius-sm) var(--radius-sm);overflow:hidden}
+.editor-content{flex:1;padding:12px 14px;min-height:340px;outline:none;overflow-y:auto;line-height:1.6;font-size:14px;background:var(--bg);color:var(--text);word-break:break-word}
+.editor-content:empty::before{content:attr(data-placeholder);color:var(--text2);pointer-events:none}
+.editor-content a{color:var(--accent);text-decoration:underline}
+.editor-content ul,.editor-content ol{margin:6px 0;padding-left:24px}
+.editor-content blockquote{border-left:3px solid var(--border);margin:8px 0;padding:4px 12px;color:var(--text2)}
+.editor-plaintext{flex:1;min-height:340px;line-height:1.6;font-size:14px;border:none;border-radius:0 0 var(--radius-sm) var(--radius-sm);resize:none;outline:none;padding:12px 14px;background:var(--bg);color:var(--text)}
+.msg-row.dragging{opacity:.4;outline:1px dashed var(--accent)}
+.folder.drop-target{background:var(--accent-bg)!important;border-left-color:var(--accent)!important;outline:2px dashed var(--accent);outline-offset:-2px;box-shadow:inset 0 0 12px rgba(168,50,74,.15)}
+.ev-attachments{padding:12px 22px;border-top:1px solid var(--border)}
+.ev-attachments-label{font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px}
+.ev-att{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);margin:0 8px 8px 0;text-decoration:none;color:var(--text);font-size:13px;transition:background .15s,border-color .15s}
+.ev-att:hover{background:var(--surface2);border-color:var(--accent)}
+.ev-att-icon{font-size:18px;flex-shrink:0;width:24px;text-align:center}
+.ev-att-info{display:flex;flex-direction:column;gap:1px}
+.ev-att-name{font-weight:500;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ev-att-size{font-size:11px;color:var(--text2)}
+.ev-att-dl{color:var(--text2);margin-left:4px}
+.ev-att:hover .ev-att-dl{color:var(--accent)}
+.compose-att-bar{padding:8px 18px;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.compose-att-item{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:var(--bg);border:1px solid var(--border);border-radius:4px;font-size:12px;color:var(--text)}
+.compose-att-item .att-rm{cursor:pointer;color:var(--danger);margin-left:4px;font-weight:700}
+.compose-att-item .att-rm:hover{color:#fff}
+.compose-att-add{color:var(--accent)!important}
+
 </style>
 </head>
 <body>
@@ -181,15 +218,49 @@ input:focus,textarea:focus{border-color:var(--accent)}textarea{resize:vertical}
 
 <div class="overlay" id="composeOverlay">
   <div class="compose">
-    <div class="compose-head">New Message <button onclick="closeCompose()">✕</button></div>
+    <div class="compose-head">New Message <button onclick="closeCompose()">&#10005;</button></div>
     <div class="compose-body">
       <div class="field"><label>To</label><input id="cTo" placeholder="recipient@example.com"></div>
       <div class="field"><label>CC</label><input id="cCc"></div>
       <div class="field"><label>Subject</label><input id="cSubj"></div>
-      <div class="field"><label>Message</label><textarea id="cBody"></textarea></div>
+      <div class="field editor-field">
+        <div class="editor-toolbar" id="editorToolbar">
+          <button type="button" data-cmd="bold" title="Bold (Ctrl+B)"><b>B</b></button>
+          <button type="button" data-cmd="italic" title="Italic (Ctrl+I)"><i>I</i></button>
+          <button type="button" data-cmd="underline" title="Underline (Ctrl+U)"><u>U</u></button>
+          <button type="button" data-cmd="strikeThrough" title="Strikethrough"><s>S</s></button>
+          <span class="tb-sep"></span>
+          <button type="button" data-cmd="insertUnorderedList" title="Bullet list">&#8226; list</button>
+          <button type="button" data-cmd="insertOrderedList" title="Numbered list">1. list</button>
+          <span class="tb-sep"></span>
+          <button type="button" data-cmd="justifyLeft" title="Align left">Left</button>
+          <button type="button" data-cmd="justifyCenter" title="Center">Center</button>
+          <button type="button" data-cmd="justifyRight" title="Align right">Right</button>
+          <span class="tb-sep"></span>
+          <button type="button" data-cmd="createLink" title="Insert link">Link</button>
+          <button type="button" data-cmd="removeFormat" title="Clear formatting">Clear</button>
+        </div>
+        <div class="editor-mode-bar" id="editorModeBar">
+          <span style="opacity:.6">Mode</span>
+          <div class="mode-switch">
+            <span class="mode-opt active" id="modeRich" onclick="setEditorMode(false)">Rich</span>
+            <span class="mode-opt" id="modePlain" onclick="setEditorMode(true)">Plain</span>
+          </div>
+        </div>
+        <div class="editor-wrap" id="editorWrap">
+          <div id="cEditor" class="editor-content" contenteditable="true" data-placeholder="Write your message..."></div>
+          <textarea id="cBody" class="editor-plaintext" style="display:none"></textarea>
+        </div>
+        <div class="compose-att-bar" id="composeAttBar" style="display:none">
+          <div id="composeFileList"></div>
+          <button type="button" class="btn btn-sm compose-att-add" onclick="document.getElementById('composeFileInput').click()">+ Add file</button>
+          <input type="file" id="composeFileInput" multiple style="display:none" onchange="handleComposeFiles(this.files)">
+        </div>
+      </div>
     </div>
     <div class="compose-foot">
       <button class="btn btn-primary" onclick="doSend()">Send</button>
+      <button class="btn" onclick="document.getElementById('composeFileInput').click()">\U0001f4ce Attach</button>
       <button class="btn" onclick="closeCompose()">Discard</button>
     </div>
   </div>

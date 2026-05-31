@@ -3,9 +3,12 @@ const http = require('http');
 const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 const { ImapFlow } = require('imapflow');
+const { simpleParser } = require('mailparser');
 const { loadRules, saveRules, matchRule, applyRules, processRulesForFolder } = require('./rules-engine');
 const nodemailer = require('nodemailer');
 const path = require('path');
+const multer = require('multer');
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } }); // 25MB max
 
 const app = express();
 const server = http.createServer(app);
@@ -214,7 +217,7 @@ async function listMessages(folderPath, page, limit) {
       to: (msg.envelope.to || []).map(function(a) { return a.address ? a.name + ' <' + a.address + '>' : (a.name || ''); }).join(', '),
       subject: msg.envelope.subject || '(no subject)', date: msg.envelope.date,
       flags: Array.from(msg.flags || []), starred: !!(msg.flags && msg.flags.has('\\Flagged')),
-      read: !(msg.flags && msg.flags.has('\\Seen')),
+      read: !!(msg.flags && msg.flags.has('\\Seen')),
       hasAttachments: !!(msg.bodyStructure && JSON.stringify(msg.bodyStructure).includes('attachment')),
     });
   }
@@ -227,38 +230,16 @@ async function getMessage(folderPath, uid) {
   if (!imapClient) throw new Error('Not connected');
   await imapClient.mailboxOpen(folderPath, { readOnly: true });
   var msg = await imapClient.fetchOne(uid, { envelope: true, flags: true, source: true, bodyStructure: true }, { uid: true });
-  var source = msg.source.toString();
-  var textBody = '', htmlBody = '', attachments = [];
-  var bm = source.match(/boundary="?([^"\r\n;]+)"?/);
-  if (bm) {
-    var parts = source.split('--' + bm[1]);
-    for (var i = 0; i < parts.length; i++) {
-      var part = parts[i];
-      if (!part.trim() || part.startsWith('--')) continue;
-      var he = part.indexOf('\r\n\r\n') !== -1 ? part.indexOf('\r\n\r\n') : part.indexOf('\n\n');
-      if (he === -1) continue;
-      var pH = part.substring(0, he);
-      var pB = part.substring(he).replace(/^(\r?\n)+/, '').replace(/(\r?\n)?--$/, '');
-      if (pH.includes('Content-Transfer-Encoding: base64')) {
-        if (pH.includes('Content-Disposition: attachment') || pH.match(/filename[^;=\n]*=/)) {
-          var fn = pH.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
-          attachments.push({ name: fn ? fn[1].replace(/['"]/g, '') : 'attachment', size: pB.length });
-          continue;
-        }
-        // Try to decode inline base64 content
-        try {
-          pB = Buffer.from(pB.replace(/\r?\n/g, ''), 'base64').toString('utf8');
-        } catch(e) { /* leave as-is */ }
-      }
-      if (pH.includes('Content-Disposition: attachment') || pH.match(/filename[^;=\n]*=/)) {
-        var fn = pH.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
-        attachments.push({ name: fn ? fn[1].replace(/['"]/g, '') : 'attachment', size: pB.length });
-      } else if (pH.includes('text/html')) { htmlBody = pB; }
-      else if (pH.includes('text/plain')) { textBody = pB; }
+  // Use mailparser for proper MIME decoding (handles base64, quoted-printable, multipart, etc.)
+  var parsed = await simpleParser(msg.source);
+  var textBody = parsed.text || '';
+  var htmlBody = parsed.html || '';
+  var attachments = [];
+  if (parsed.attachments && parsed.attachments.length) {
+    for (var i = 0; i < parsed.attachments.length; i++) {
+      var att = parsed.attachments[i];
+      attachments.push({ name: att.filename || 'attachment', size: att.size, contentType: att.contentType });
     }
-  } else {
-    var he = source.indexOf('\r\n\r\n') !== -1 ? source.indexOf('\r\n\r\n') : source.indexOf('\n\n');
-    textBody = he !== -1 ? source.substring(he).replace(/^(\r?\n)+/, '') : source;
   }
   try { await imapClient.messageFlagsAdd(uid, ['\\Seen'], { uid: true }); } catch(e) {}
   await imapClient.mailboxClose();
@@ -278,37 +259,15 @@ async function peekMessage(folderPath, uid) {
   if (!imapClient) throw new Error('Not connected');
   await imapClient.mailboxOpen(folderPath, { readOnly: true });
   var msg = await imapClient.fetchOne(uid, { envelope: true, source: true }, { uid: true });
-  var source = msg.source.toString();
-  var textBody = '', htmlBody = '';
-  var bm = source.match(/boundary="?([^"\r\n;]+)"?/);
-  if (bm) {
-    var parts = source.split('--' + bm[1]);
-    for (var i = 0; i < parts.length; i++) {
-      var part = parts[i];
-      if (!part.trim() || part.startsWith('--')) continue;
-      var he = part.indexOf('\r\n\r\n') !== -1 ? part.indexOf('\r\n\r\n') : part.indexOf('\n\n');
-      if (he === -1) continue;
-      var pH = part.substring(0, he);
-      var pB = part.substring(he).replace(/^(\r?\n)+/, '').replace(/(\r?\n)?--$/, '');
-      if (pH.includes('Content-Disposition: attachment') || pH.match(/filename[^;=\n]*=/)) continue;
-      if (pH.includes('Content-Transfer-Encoding: base64')) {
-        try { pB = Buffer.from(pB.replace(/\r?\n/g, ''), 'base64').toString('utf8'); } catch(e) {}
-      }
-      if (pH.includes('text/html')) { htmlBody = pB; }
-      else if (pH.includes('text/plain')) { textBody = pB; }
-    }
-  } else {
-    var he = source.indexOf('\r\n\r\n') !== -1 ? source.indexOf('\r\n\r\n') : source.indexOf('\n\n');
-    textBody = he !== -1 ? source.substring(he).replace(/^(\r?\n)+/, '') : source;
-  }
+  var parsed = await simpleParser(msg.source);
   await imapClient.mailboxClose();
   return {
     uid: msg.uid,
     from: (msg.envelope.from || []).map(function(a) { return a.address ? a.name + ' <' + a.address + '>' : (a.name || ''); }).join(', '),
     to: (msg.envelope.to || []).map(function(a) { return a.address ? a.name + ' <' + a.address + '>' : (a.name || ''); }).join(', '),
     subject: msg.envelope.subject || '(no subject)',
-    textBody: textBody.trim(),
-    htmlBody: htmlBody.trim()
+    textBody: (parsed.text || '').trim(),
+    htmlBody: (parsed.html || '').trim()
   };
 }
 
@@ -384,7 +343,7 @@ async function searchMessages(folder, query) {
         to: (msg.envelope.to || []).map(function(a) { return a.address ? a.name + ' <' + a.address + '>' : (a.name || ''); }).join(', '),
         subject: msg.envelope.subject || '(no subject)', date: msg.envelope.date,
         flags: Array.from(msg.flags || []), starred: !!(msg.flags && msg.flags.has('\\Flagged')),
-        read: !(msg.flags && msg.flags.has('\\Seen')),
+        read: !!(msg.flags && msg.flags.has('\\Seen')),
         hasAttachments: false
       });
     }
@@ -417,10 +376,12 @@ async function markMessagesRead(fp, uids) {
 
 async function sendMail(opts) {
   if (!smtpTransport) throw new Error('SMTP not configured');
-  var r = await smtpTransport.sendMail({
+  var mailOpts = {
     from: config.displayName ? '"' + config.displayName + '" <' + config.imapUser + '>' : config.imapUser,
     to: opts.to, cc: opts.cc, bcc: opts.bcc, subject: opts.subject, text: opts.text, html: opts.html,
-  });
+  };
+  if (opts.attachments && opts.attachments.length) mailOpts.attachments = opts.attachments;
+  var r = await smtpTransport.sendMail(mailOpts);
   try {
     if (imapClient) {
       var msgContent = 'From: ' + (config.displayName ? config.displayName + ' <' + config.imapUser + '>' : config.imapUser) + '\r\n'
@@ -442,11 +403,47 @@ app.get('/api/status', requireAuth, function(req, res) { res.json({ connected: !
 app.get('/api/folders', requireAuth, function(req, res) { listFolders().then(function(r) { res.json(r); }).catch(function(e) { res.status(400).json({ error: e.message }); }); });
 app.get('/api/messages', requireAuth, function(req, res) { listMessages(req.query.folder, req.query.page, req.query.limit).then(function(r) { res.json(r); }).catch(function(e) { res.status(400).json({ error: e.message }); }); });
 app.get('/api/message', requireAuth, function(req, res) { getMessage(req.query.folder, Number(req.query.uid)).then(function(r) { res.json(r); }).catch(function(e) { res.status(400).json({ error: e.message }); }); });
+
+// ── Attachment download ──
+app.get('/api/attachment', requireAuth, function(req, res) {
+  if (!imapClient) return res.status(400).json({ error: 'Not connected' });
+  var folder = req.query.folder;
+  var uid = Number(req.query.uid);
+  var index = Number(req.query.index);
+  if (!folder || (!uid && uid !== 0)) return res.status(400).json({ error: 'folder and uid required' });
+  (async function() {
+    await imapClient.mailboxOpen(folder, { readOnly: true });
+    var msg = await imapClient.fetchOne(uid, { source: true }, { uid: true });
+    var parsed = await simpleParser(msg.source);
+    await imapClient.mailboxClose();
+    if (!parsed.attachments || !parsed.attachments[index]) return res.status(404).json({ error: 'Attachment not found' });
+    var att = parsed.attachments[index];
+    var filename = att.filename || 'attachment';
+    res.setHeader('Content-Type', att.contentType || 'application/octet-stream');
+    res.setHeader('Content-Disposition', 'attachment; filename="' + filename.replace(/"/g, '\\"') + '"');
+    res.setHeader('Content-Length', att.size);
+    res.send(att.content);
+  })().catch(function(e) { res.status(400).json({ error: e.message }); });
+});
+
+// ── Send with attachments ──
+app.post('/api/send', requireAuth, upload.array('attachments', 10), function(req, res) {
+  var opts = {
+    to: req.body.to, cc: req.body.cc, bcc: req.body.bcc,
+    subject: req.body.subject, text: req.body.text, html: req.body.html
+  };
+  if (req.files && req.files.length) {
+    opts.attachments = req.files.map(function(f) {
+      return { filename: f.originalname, content: f.buffer, contentType: f.mimetype };
+    });
+  }
+  sendMail(opts).then(function(r) { res.json(r); }).catch(function(e) { res.status(400).json({ error: e.message }); });
+});
 app.get('/api/peek', requireAuth, function(req, res) { peekMessage(req.query.folder, Number(req.query.uid)).then(function(r) { res.json(r); }).catch(function(e) { res.status(400).json({ error: e.message }); }); });
 app.post('/api/star', requireAuth, function(req, res) { toggleStar(req.body.folder, req.body.uid, req.body.starred).then(function(r) { res.json(r); }).catch(function(e) { res.status(400).json({ error: e.message }); }); });
 app.post('/api/delete', requireAuth, function(req, res) { deleteMessages(req.body.folder, req.body.uids).then(function(r) { res.json(r); }).catch(function(e) { res.status(400).json({ error: e.message }); }); });
 app.post('/api/markread', requireAuth, function(req, res) { markMessagesRead(req.body.folder, req.body.uids).then(function(r) { res.json(r); }).catch(function(e) { res.status(400).json({ error: e.message }); }); });
-app.post('/api/send', requireAuth, function(req, res) { sendMail(req.body).then(function(r) { res.json(r); }).catch(function(e) { res.status(400).json({ error: e.message }); }); });
+// Old /api/send replaced by multer version above
 
 
 // ── Folder management ──
