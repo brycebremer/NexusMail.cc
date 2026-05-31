@@ -1404,8 +1404,6 @@ function setEditorMode(plain) {
     if (modeBar) { modeBar.style.display = 'flex'; }
     if (modeRich) modeRich.classList.add('active');
     if (modePlain) modePlain.classList.remove('active');
-  }
-}
 
   }
 }
