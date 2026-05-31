@@ -75,6 +75,14 @@ input:focus,textarea:focus{border-color:var(--accent)}textarea{resize:vertical}
 .compose-body .field{display:flex;flex-direction:column;gap:3px}
 .compose-body label{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.4px}
 .compose-body input,.compose-body textarea{width:100%}
+.autocomplete-field{position:relative}
+.ac-dropdown{display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-top:none;border-radius:0 0 var(--radius) var(--radius);max-height:200px;overflow-y:auto;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,.3)}
+.ac-dropdown.show{display:block}
+.ac-item{padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:1px}
+.ac-item:last-child{border-bottom:none}
+.ac-item:hover,.ac-item.active{background:var(--accent);color:#fff}
+.ac-item .ac-name{font-weight:500}
+.ac-item .ac-email{font-size:11px;opacity:.7}
 /* compose textarea replaced by editor */
 .compose-foot{padding:12px 18px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
 .login-box{width:380px;background:var(--surface);border-radius:var(--radius);display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,.6)}
@@ -224,8 +232,8 @@ input:focus,textarea:focus{border-color:var(--accent)}textarea{resize:vertical}
   <div class="compose">
     <div class="compose-head">New Message <button onclick="closeCompose()">&#10005;</button></div>
     <div class="compose-body">
-      <div class="field"><label>To</label><input id="cTo" placeholder="recipient@example.com"></div>
-      <div class="field"><label>CC</label><input id="cCc"></div>
+      <div class="field autocomplete-field"><label>To</label><input id="cTo" placeholder="recipient@example.com" autocomplete="off"><div class="ac-dropdown" id="acTo"></div></div>
+      <div class="field autocomplete-field"><label>CC</label><input id="cCc" placeholder="cc@example.com" autocomplete="off"><div class="ac-dropdown" id="acCc"></div></div>
       <div class="field"><label>Subject</label><input id="cSubj"></div>
       <div class="field editor-field">
         <div class="editor-toolbar" id="editorToolbar">

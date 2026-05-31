@@ -164,6 +164,27 @@ var smtpTransport = null;
 var config = null;
 var wsClients = new Set();
 
+// ── Contacts Index (built from seen envelope addresses) ──
+var contactsMap = new Map(); // email(lower) → { email, name, lastSeen }
+
+function indexAddresses(envelope) {
+  var addrs = [].concat(envelope.from || [], envelope.to || [], envelope.cc || [], envelope.bcc || []);
+  var now = Date.now();
+  for (var i = 0; i < addrs.length; i++) {
+    var a = addrs[i];
+    if (!a || !a.address) continue;
+    var email = a.address.toLowerCase();
+    // Skip the logged-in user's own address
+    if (config && email === config.imapUser.toLowerCase()) continue;
+    var existing = contactsMap.get(email);
+    if (!existing || (a.name && a.name.length > (existing.name || '').length)) {
+      contactsMap.set(email, { email: email, name: (a.name || '').trim(), lastSeen: now });
+    } else if (existing) {
+      existing.lastSeen = now;
+    }
+  }
+}
+
 // ── Lightweight polling via STATUS command (no mailbox open/close per folder) ──
 var lastCounts = {};
 setInterval(function() {
@@ -238,6 +259,7 @@ async function listMessages(folderPath, page, limit) {
   var end = Math.max(1, total - ((page - 1) * limit));
   var msgs = [];
   for await (var msg of imapClient.fetch(end + ':' + start, { envelope: true, flags: true, bodyStructure: true })) {
+    indexAddresses(msg.envelope);
     msgs.push({
       id: msg.uid,
       from: (msg.envelope.from || []).map(function(a) { return a.address ? a.name + ' <' + a.address + '>' : (a.name || ''); }).join(', '),
@@ -257,6 +279,7 @@ async function getMessage(folderPath, uid) {
   if (!imapClient) throw new Error('Not connected');
   await imapClient.mailboxOpen(folderPath, { readOnly: true });
   var msg = await imapClient.fetchOne(uid, { envelope: true, flags: true, source: true, bodyStructure: true }, { uid: true });
+  indexAddresses(msg.envelope);
   // Use mailparser for proper MIME decoding (handles base64, quoted-printable, multipart, etc.)
   var parsed = await simpleParser(msg.source);
   var textBody = parsed.text || '';
@@ -286,6 +309,7 @@ async function peekMessage(folderPath, uid) {
   if (!imapClient) throw new Error('Not connected');
   await imapClient.mailboxOpen(folderPath, { readOnly: true });
   var msg = await imapClient.fetchOne(uid, { envelope: true, source: true }, { uid: true });
+  indexAddresses(msg.envelope);
   var parsed = await simpleParser(msg.source);
   await imapClient.mailboxClose();
   return {
@@ -521,6 +545,20 @@ app.get('/api/search', requireAuth, function(req, res) {
   var folder = req.query.folder || 'INBOX';
   if (!q) return res.json({ messages: [], total: 0 });
   searchMessages(folder, q).then(function(r) { res.json(r); }).catch(function(e) { res.status(400).json({ error: e.message }); });
+});
+
+// ── Contacts Autocomplete ──
+app.get('/api/contacts', requireAuth, function(req, res) {
+  var q = (req.query.q || '').trim().toLowerCase();
+  if (!q) { res.json([]); return; }
+  var results = [];
+  contactsMap.forEach(function(c) {
+    if (c.email.indexOf(q) >= 0 || c.name.toLowerCase().indexOf(q) >= 0) {
+      results.push(c);
+    }
+  });
+  results.sort(function(a, b) { return b.lastSeen - a.lastSeen; });
+  res.json(results.slice(0, 10));
 });
 
 // ── Rules ──

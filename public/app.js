@@ -710,7 +710,102 @@ function emptyTrash() {
 
 function refreshFolder() { if (S.folder) loadFolders(); }
 
+// ── Contact Autocomplete ──
+var acState = { input: null, dd: null, items: [], idx: -1, timer: null };
+
+function acAttach(inputId, ddId) {
+  var inp = document.getElementById(inputId);
+  var dd = document.getElementById(ddId);
+  inp.addEventListener('input', function() { acDebounce(inp, dd); });
+  inp.addEventListener('keydown', function(e) { acKey(e, inp, dd); });
+  inp.addEventListener('blur', function() { setTimeout(function() { acHide(dd); }, 200); });
+  inp.addEventListener('focus', function() { if (inp.value.length >= 2) acDebounce(inp, dd); });
+}
+
+function acDebounce(inp, dd) {
+  clearTimeout(acState.timer);
+  var val = acCurrentPart(inp);
+  if (val.length < 2) { acHide(dd); return; }
+  acState.timer = setTimeout(function() { acFetch(val, inp, dd); }, 200);
+}
+
+function acCurrentPart(inp) {
+  var val = inp.value;
+  var pos = inp.selectionStart;
+  var before = val.substring(0, pos);
+  var after = val.substring(pos);
+  // Find the current comma-separated part being typed
+  var parts = before.split(',');
+  var current = parts[parts.length - 1].trim();
+  return current;
+}
+
+function acFetch(q, inp, dd) {
+  api('contacts?q=' + encodeURIComponent(q)).then(function(results) {
+    if (!results.length) { acHide(dd); return; }
+    acState.items = results;
+    acState.idx = -1;
+    dd.innerHTML = '';
+    for (var i = 0; i < results.length; i++) {
+      var div = document.createElement('div');
+      div.className = 'ac-item';
+      div.setAttribute('data-idx', i);
+      var name = esc(results[i].name || results[i].email);
+      var email = esc(results[i].email);
+      div.innerHTML = '<span class="ac-name">' + name + '</span>' + (results[i].name ? '<span class="ac-email">' + email + '</span>' : '');
+      div.addEventListener('mousedown', (function(idx) { return function(e) { e.preventDefault(); acSelect(idx, inp, dd); }; })(i));
+      dd.appendChild(div);
+    }
+    dd.classList.add('show');
+  }).catch(function() { acHide(dd); });
+}
+
+function acKey(e, inp, dd) {
+  if (!dd.classList.contains('show')) return;
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    acState.idx = Math.min(acState.idx + 1, acState.items.length - 1);
+    acHighlight(dd);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    acState.idx = Math.max(acState.idx - 1, 0);
+    acHighlight(dd);
+  } else if (e.key === 'Enter' || e.key === 'Tab') {
+    if (acState.idx >= 0) { e.preventDefault(); acSelect(acState.idx, inp, dd); }
+  } else if (e.key === 'Escape') {
+    acHide(dd);
+  }
+}
+
+function acHighlight(dd) {
+  var items = dd.querySelectorAll('.ac-item');
+  for (var i = 0; i < items.length; i++) items[i].classList.remove('active');
+  if (acState.idx >= 0 && items[acState.idx]) items[acState.idx].classList.add('active');
+}
+
+function acSelect(idx, inp, dd) {
+  var c = acState.items[idx];
+  if (!c) return;
+  var val = inp.value;
+  var pos = inp.selectionStart;
+  var before = val.substring(0, pos);
+  var after = val.substring(pos);
+  // Replace the current comma-separated part
+  var parts = before.split(',');
+  parts[parts.length - 1] = (c.name ? c.name + ' <' + c.email + '>' : c.email);
+  inp.value = parts.join(', ') + (after ? ', ' + after : '');
+  inp.focus();
+  acHide(dd);
+}
+
+function acHide(dd) { dd.classList.remove('show'); dd.innerHTML = ''; acState.idx = -1; }
+
+// Init autocomplete on compose fields
+acAttach('cTo', 'acTo');
+acAttach('cCc', 'acCc');
+
 function openCompose() { document.getElementById('composeOverlay').classList.add('show'); initEditor(); }
+
 function closeCompose() {
   document.getElementById('composeOverlay').classList.remove('show');
   document.getElementById('cTo').value=''; document.getElementById('cCc').value='';
