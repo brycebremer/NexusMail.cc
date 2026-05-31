@@ -256,7 +256,7 @@ function connectWS() {
       if (currentChanged) loadMessages();
       loadFolders();
     }
-    if (data.type === 'imap:flagsChanged') { if (S.folder === data.data.path) loadMessages(); }
+    if (data.type === 'imap:flagsChanged') { if (S.folder === data.data.path) loadMessages(); loadFolders(); }
     if (data.type === 'imap:error') { toast(data.data, 'error'); }
     if (data.type === 'status') { setConnected(data.data.connected, data.data); }
   };
@@ -548,6 +548,13 @@ function renderMessages() {
 function openMsg(uid) {
   S.activeUid = uid;
   S.newUids.delete(uid);  // Clear new-message highlight when opened
+  // Optimistically mark as read in local state
+  for (var i = 0; i < S.messages.length; i++) {
+    if (S.messages[i].id === uid) {
+      if (!S.messages[i].read) { S.messages[i].read = true; renderMessages(); }
+      break;
+    }
+  }
   var el = document.getElementById('msgView');
   el.innerHTML = '<div class="loading"><div class="spinner"></div> Loading\u2026</div>';
   api('message?folder=' + encodeURIComponent(S.folder) + '&uid=' + uid).then(function(m) {
