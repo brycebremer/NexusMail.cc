@@ -277,7 +277,7 @@ async function listMessages(folderPath, page, limit) {
 
 async function getMessage(folderPath, uid) {
   if (!imapClient) throw new Error('Not connected');
-  await imapClient.mailboxOpen(folderPath, { readOnly: true });
+  await imapClient.mailboxOpen(folderPath, { readOnly: false });
   var msg = await imapClient.fetchOne(uid, { envelope: true, flags: true, source: true, bodyStructure: true }, { uid: true });
   indexAddresses(msg.envelope);
   // Use mailparser for proper MIME decoding (handles base64, quoted-printable, multipart, etc.)
@@ -291,7 +291,7 @@ async function getMessage(folderPath, uid) {
       attachments.push({ name: att.filename || 'attachment', size: att.size, contentType: att.contentType });
     }
   }
-  try { await imapClient.messageFlagsAdd(uid, ['\\Seen'], { uid: true }); } catch(e) {}
+  try { await imapClient.messageFlagsAdd(uid, ['\\Seen'], { uid: true }); broadcast('imap:flagsChanged', { path: folderPath, uid: uid, flags: ['\\Seen'] }); } catch(e) {}
   await imapClient.mailboxClose();
   return {
     uid: msg.uid,
@@ -421,6 +421,7 @@ async function markMessagesRead(fp, uids) {
   for (var i = 0; i < uids.length; i++) {
     await imapClient.messageFlagsAdd(uids[i], ['\\Seen'], { uid: true });
   }
+  broadcast('imap:flagsChanged', { path: fp, uids: uids });
   await imapClient.mailboxClose();
   return { ok: true };
 }
