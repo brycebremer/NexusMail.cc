@@ -258,7 +258,7 @@ async function listMessages(folderPath, page, limit) {
   var start = Math.max(1, total - (page * limit) + 1);
   var end = Math.max(1, total - ((page - 1) * limit));
   var msgs = [];
-  for await (var msg of imapClient.fetch(end + ':' + start, { envelope: true, flags: true, bodyStructure: true })) {
+  for await (var msg of imapClient.fetch(start + ':' + end, { envelope: true, flags: true, bodyStructure: true })) {
     indexAddresses(msg.envelope);
     msgs.push({
       id: msg.uid,
@@ -338,22 +338,17 @@ async function deleteMessages(fp, uids) {
   // If already in Trash, permanently delete
   if (fp === 'Trash' || fp === 'INBOX.Trash' || fp.endsWith('/Trash')) {
     await imapClient.mailboxOpen(fp);
-    for (var i = 0; i < uids.length; i++) {
-      await imapClient.messageDelete(uids[i], { uid: true });
-    }
+    await imapClient.messageDelete(uids.join(','), { uid: true });
     await imapClient.mailboxClose();
     return { ok: true, permanent: true };
   }
   // Otherwise, move to Trash
   await imapClient.mailboxOpen(fp);
-  for (var i = 0; i < uids.length; i++) {
-    try {
-      await imapClient.messageMove(uids[i], 'Trash', { uid: true });
-    } catch (e) {
-      // If Trash folder doesn't exist, fall back to permanent delete
-      console.error('Move to Trash failed, deleting permanently:', e.message);
-      await imapClient.messageDelete(uids[i], { uid: true });
-    }
+  try {
+    await imapClient.messageMove(uids.join(','), 'Trash', { uid: true });
+  } catch (e) {
+    console.error('Move to Trash failed, deleting permanently:', e.message);
+    await imapClient.messageDelete(uids.join(','), { uid: true });
   }
   await imapClient.mailboxClose();
   return { ok: true, moved: true };
@@ -363,12 +358,19 @@ async function deleteMessages(fp, uids) {
 async function moveMessages(src, dest, uids) {
   if (!imapClient) throw new Error('Not connected');
   await imapClient.mailboxOpen(src);
-  for (var i = 0; i < uids.length; i++) {
-    await imapClient.messageMove(uids[i], dest, { uid: true });
-  }
+  await imapClient.messageMove(uids.join(','), dest, { uid: true });
   await imapClient.mailboxClose();
   return { ok: true };
 }
+async function markMessagesUnread(fp, uids) {
+  if (!imapClient) throw new Error('Not connected');
+  await imapClient.mailboxOpen(fp);
+  await imapClient.messageFlagsRemove(uids.join(','), ['\\Seen'], { uid: true });
+  broadcast('imap:flagsChanged', { path: fp, uids: uids });
+  await imapClient.mailboxClose();
+  return { ok: true };
+}
+
 async function searchMessages(folder, query) {
   if (!imapClient) throw new Error('Not connected');
   await imapClient.mailboxOpen(folder, { readOnly: true });
@@ -420,9 +422,7 @@ async function emptyTrash() {
 async function markMessagesRead(fp, uids) {
   if (!imapClient) throw new Error('Not connected');
   await imapClient.mailboxOpen(fp);
-  for (var i = 0; i < uids.length; i++) {
-    await imapClient.messageFlagsAdd(uids[i], ['\\Seen'], { uid: true });
-  }
+  await imapClient.messageFlagsAdd(uids.join(','), ['\\Seen'], { uid: true });
   broadcast('imap:flagsChanged', { path: fp, uids: uids });
   await imapClient.mailboxClose();
   return { ok: true };
@@ -569,6 +569,8 @@ app.get('/api/peek', requireAuth, function(req, res) { peekMessage(req.query.fol
 app.post('/api/star', requireAuth, function(req, res) { toggleStar(req.body.folder, req.body.uid, req.body.starred).then(function(r) { res.json(r); }).catch(function(e) { res.status(400).json({ error: e.message }); }); });
 app.post('/api/delete', requireAuth, function(req, res) { deleteMessages(req.body.folder, req.body.uids).then(function(r) { res.json(r); }).catch(function(e) { res.status(400).json({ error: e.message }); }); });
 app.post('/api/markread', requireAuth, function(req, res) { markMessagesRead(req.body.folder, req.body.uids).then(function(r) { res.json(r); }).catch(function(e) { res.status(400).json({ error: e.message }); }); });
+
+app.post('/api/markunread', requireAuth, function(req, res) { markMessagesUnread(req.body.folder, req.body.uids).then(function(r) { res.json(r); }).catch(function(e) { res.status(400).json({ error: e.message }); }); });
 
 // ── Drafts ──
 app.post('/api/drafts/save', requireAuth, function(req, res) {

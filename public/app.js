@@ -4,7 +4,7 @@ var S = {
   activeUid: null, activeMsg: null,
   ws: null, allSelected: false, showHtml: false,
   notifiedUids: new Set(),
-  newUids: new Set,
+  newUids: new Set(),
   initialized: false,
   threadView: false,
   threads: [],
@@ -24,8 +24,7 @@ function formatSize(b) {
 function fileIcon(name) {
   var ext = (name || '').split('.').pop().toLowerCase();
   var map = {pdf:'PDF',doc:'DOC',docx:'DOC',xls:'XLS',xlsx:'XLS',ppt:'PPT',pptx:'PPT',zip:'ZIP',rar:'ZIP','7z':'ZIP',tar:'ZIP',gz:'ZIP',jpg:'IMG',jpeg:'IMG',png:'IMG',gif:'IMG',svg:'IMG',webp:'IMG',mp3:'AUD',wav:'AUD',mp4:'VID',avi:'VID',mov:'VID',txt:'TXT',csv:'CSV',json:'JSON',html:'HTML'};
-  return map[ext] || 'ATT'
-  return map[ext] || '📎';
+  return map[ext] || 'ATT';
 }
 window._composeFiles = [];
 function handleComposeFiles(files) {
@@ -268,6 +267,12 @@ function connectWS() {
   S.ws.onerror = function() { S.ws = null; };
 }
 
+function updateTitle() {
+  var unread = 0;
+  for (var i = 0; i < S.folders.length; i++) { unread += (S.folders[i].unread || 0); }
+  document.title = (unread > 0 ? '(' + unread + ') ' : '') + 'NexusMail';
+}
+
 function setConnected(v, info) {
   S.connected = v;
   document.getElementById('connDot').className = v ? 'dot dot-on' : 'dot dot-off dot-pulse';
@@ -308,6 +313,7 @@ function renderFolders() {
     html += '</div>';
   }
   document.getElementById('folders').innerHTML = html;
+  updateTitle();
   var items = document.querySelectorAll('#folders .folder');
   for (var i = 0; i < items.length; i++) {
     items[i].addEventListener('click', function() { selectFolder(this.getAttribute('data-folder')); });
@@ -541,7 +547,10 @@ function renderMessages() {
     if (isThread) classes += ' has-thread';
     html += '<div class="' + classes + '" data-uid="' + m.id + '" data-thread-id="' + (isThread ? m._thread.id : '') + '" draggable="true">';
     html += '<div class="m-sel" data-uid="' + m.id + '">' + (S.selected.has(m.id) ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="var(--accent)" stroke="var(--accent)" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-5" stroke="#fff" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>' : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text2)" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>') + '</div>';
-    html += '<span class="m-from">' + esc(m.from.split('<')[0].trim()) + '</span>';
+    var fromName = m.from.split('<')[0].trim() || m.from;
+    var initials = fromName.split(/\s+/).map(function(w) { return (w[0] || '').toUpperCase(); }).join('').substring(0,2);
+    var hue = 0; for (var ci = 0; ci < fromName.length; ci++) { hue = ((hue << 5) - hue + fromName.charCodeAt(ci)) | 0; } hue = Math.abs(hue) % 360;
+    html += '<div class="m-from-wrap"><span class="m-avatar" style="background:hsl(' + hue + ',55%,35%)">' + esc(initials) + '</span><span class="m-from">' + esc(fromName) + '</span></div>';
     html += '<span class="m-subj">' + esc(m.subject) + (isThread ? ' <span class="thread-count">(' + m._thread.messages.length + ')</span>' : '') + '</span>';
     if (isThread && m._thread.unread) html += '<span class="thread-unread">' + m._thread.unread + '</span>';
     html += '<div class="m-meta"><span class="m-date">' + fmtDate(m.date) + '</span>';
@@ -644,7 +653,7 @@ function openMsg(uid) {
     if (m.htmlBody) {
       S.showHtml = true;
       bodyContent = '<div class="ev-body" style="display:none">' + esc(m.textBody || 'No content') + '</div>' +
-        '<iframe id="htmlFrame" sandbox="allow-same-origin" style="width:calc(100% - 44px);border:none;margin:0 22px;background:#fff;border-radius:4px"></iframe>';
+        '<iframe id="htmlFrame" sandbox="" style="width:calc(100% - 44px);border:none;margin:0 22px;background:#fff;border-radius:4px"></iframe>';
     } else {
       bodyContent = '<div class="ev-body">' + esc(m.textBody || 'No content') + '</div>';
     }
@@ -672,8 +681,10 @@ function openMsg(uid) {
       (m.cc ? '<span class="label">CC</span><span class="value">' + esc(m.cc) + '</span>' : '') +
       '<span class="label">Date</span><span class="value">' + new Date(m.date).toLocaleString() + '</span></div></div>' +
       '<div class="ev-actions"><button class="btn btn-sm" onclick="replyMsg()">' + svg('<polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/>',14) + ' Reply</button>' +
+      '<button class="btn btn-sm" onclick="replyAllMsg()">' + svg('<polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/>',14) + ' Reply All</button>' +
       '<button class="btn btn-sm" onclick="forwardMsg()">' + svg('<polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/>',14) + ' Forward</button>' +
       '<button class="btn btn-sm" onclick="moveMsg()">' + svg('<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><polyline points="12 11 12 17"/><polyline points="9 14 12 11 15 14"/>',14) + ' Move</button>' +
+      '<button class="btn btn-sm" onclick="markUnreadMsg()">' + svg('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><line x1="1" y1="1" x2="23" y2="23"/>',14) + ' Unread</button>' +
       '<button class="btn btn-sm btn-danger" onclick="deleteMsg()">' + svg('<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',14) + ' Delete</button>' +
       '<button class="btn btn-sm" id="toggleHtmlBtn" style="margin-left:auto;color:var(--text2);font-size:11px">View as Text</button></div>' +
       bodyContent + attachHtml;
@@ -783,6 +794,16 @@ function markReadSelected() {
   }).catch(function(e) { toast(e.message, 'error'); });
 }
 
+function markUnreadSelected() {
+  if (!S.selected.size) return;
+  var uids = Array.from(S.selected);
+  api('markunread', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({folder:S.folder, uids:uids}) }).then(function() {
+    for (var i = 0; i < S.messages.length; i++) {
+      if (S.selected.has(S.messages[i].id)) S.messages[i].read = false;
+    }
+    S.selected.clear(); renderMessages(); renderFolders(); toast('Marked as unread', 'success');
+  }).catch(function(e) { toast(e.message, 'error'); });
+}
 function emptyTrash() {
   if (!confirm('Permanently delete all messages in Trash? This cannot be undone.')) return;
   api('emptytrash', { method: 'POST' }).then(function(r) {
@@ -933,6 +954,49 @@ function replyMsg() {
   var sel = window.getSelection();
   sel.removeAllRanges();
   sel.addRange(range);
+}
+
+function replyAllMsg() {
+  if (!S.activeMsg) return; openCompose();
+  var allRecips = [];
+  if (S.activeMsg.from) {
+    var match = S.activeMsg.from.match(/<(.+)>/);
+    allRecips.push(match ? match[1] : S.activeMsg.from);
+  }
+  if (S.activeMsg.to) {
+    var toAddrs = S.activeMsg.to.split(',').map(function(a) { var m = a.trim().match(/<(.+)>/); return m ? m[1] : a.trim(); });
+    for (var i = 0; i < toAddrs.length; i++) allRecips.push(toAddrs[i]);
+  }
+  document.getElementById('cTo').value = allRecips.join(', ');
+  if (S.activeMsg.cc) document.getElementById('cCc').value = S.activeMsg.cc;
+  document.getElementById('cSubj').value = 'Re: ' + S.activeMsg.subject.replace(/^Re: /,'');
+  var ed = document.getElementById('cEditor');
+  var date = new Date(S.activeMsg.date).toLocaleString();
+  var quoteFrom = esc(S.activeMsg.from);
+  if (S.activeMsg.htmlBody) {
+    ed.innerHTML = '<br><br><blockquote style="border-left:3px solid #2e272a;margin:8px 0;padding:4px 12px;color:#948a8c">On ' + esc(date) + ', ' + quoteFrom + ' wrote:<br>' + S.activeMsg.htmlBody + '</blockquote>';
+  } else {
+    ed.innerHTML = '<br><br><blockquote style="border-left:3px solid #2e272a;margin:8px 0;padding:4px 12px;color:#948a8c">On ' + esc(date) + ', ' + quoteFrom + ' wrote:<br>' + esc(S.activeMsg.textBody||'').replace(/\n/g, '<br>') + '</blockquote>';
+  }
+  ed.focus();
+  var range = document.createRange();
+  range.selectNodeContents(ed);
+  range.setStart(ed, 0);
+  range.collapse(true);
+  sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+function markUnreadMsg() {
+  if (!S.activeMsg || !S.activeUid) return;
+  var uids = [S.activeUid];
+  api('markunread', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({folder:S.folder, uids:uids}) }).then(function() {
+    for (var i = 0; i < S.messages.length; i++) {
+      if (S.messages[i].id === S.activeUid) S.messages[i].read = false;
+    }
+    renderMessages(); renderFolders(); toast('Marked as unread', 'success');
+  }).catch(function(e) { toast(e.message, 'error'); });
 }
 function forwardMsg() {
   if (!S.activeMsg) return; openCompose();
@@ -1202,12 +1266,15 @@ function msgContextMenu(e, uid) {
   menu.style.top = e.clientY + 'px';
   menu.innerHTML =
     '<div class="msg-menu-item" data-action="reply">' + svg('<polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/>',14) + ' Reply</div>' +
+    '<div class="msg-menu-item" data-action="replyall">' + svg('<polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/>',14) + ' Reply All</div>' +
     '<div class="msg-menu-item" data-action="forward">' + svg('<polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/>',14) + ' Forward</div>' +
     '<div class="msg-menu-sep"></div>' +
     '<div class="msg-menu-item" data-action="archive">' + svg('<polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/>',14) + ' Archive</div>' +
     '<div class="msg-menu-item" data-action="move">' + svg('<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><polyline points="12 11 12 17"/><polyline points="9 14 12 11 15 14"/>',14) + ' Move to…</div>' +
     '<div class="msg-menu-sep"></div>' +
     '<div class="msg-menu-item" data-action="star">' + svg('<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',14) + (S.folder === 'Favorites' ? ' Remove favorite' : ' Add favorite') + '</div>' +
+    '<div class="msg-menu-item" data-action="markread">' + svg('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',14) + ' Mark as Read</div>' +
+    '<div class="msg-menu-item" data-action="markunread">' + svg('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><line x1="1" y1="1" x2="23" y2="23"/>',14) + ' Mark as Unread</div>' +
     '<div class="msg-menu-sep"></div>' +
     '<div class="msg-menu-item danger" data-action="delete">' + svg('<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',14) + ' Delete</div>';
   document.body.appendChild(menu);
@@ -1219,10 +1286,13 @@ function msgContextMenu(e, uid) {
     items[i].addEventListener('click', function() {
       var action = this.getAttribute('data-action');
       if (action === 'reply') fetchAndReply(uid);
+      else if (action === 'replyall') fetchAndReplyAll(uid);
       else if (action === 'forward') fetchAndForward(uid);
       else if (action === 'archive') archiveUid(uid);
       else if (action === 'move') { S._moveUids = [uid]; showMovePicker([uid], '1 message'); }
       else if (action === 'star') doStar(uid);
+      else if (action === 'markread') markReadSelected();
+      else if (action === 'markunread') markUnreadSelected();
       else if (action === 'delete') deleteUids([uid]);
       closeMsgMenu();
     });
@@ -1245,6 +1315,17 @@ function fetchAndReply(uid) {
   api('message?folder=' + encodeURIComponent(S.folder) + '&uid=' + uid).then(function(m) {
     S.activeMsg = m;
     replyMsg();
+  }).catch(function() { toast('Failed to load message', 'error'); });
+}
+
+function fetchAndReplyAll(uid) {
+  var listMsg = null;
+  for (var i = 0; i < S.messages.length; i++) { if (S.messages[i].id === uid) { listMsg = S.messages[i]; break; } }
+  if (!listMsg) { toast('Message not found', 'error'); return; }
+  if (S.activeMsg && S.activeMsg.id === uid) { replyAllMsg(); return; }
+  api('message?folder=' + encodeURIComponent(S.folder) + '&uid=' + uid).then(function(m) {
+    S.activeMsg = m;
+    replyAllMsg();
   }).catch(function() { toast('Failed to load message', 'error'); });
 }
 

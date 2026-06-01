@@ -1,3 +1,4 @@
 # Dependencies\nnode_modules/\n\n# Backup\nemail-client.bak/\n\n# OS\n.DS_Store\nThumbs.db
 node_modules/
 package-lock.json
+*.bak
