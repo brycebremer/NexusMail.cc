@@ -653,7 +653,7 @@ function openMsg(uid) {
     if (m.htmlBody) {
       S.showHtml = true;
       bodyContent = '<div class="ev-body" style="display:none">' + esc(m.textBody || 'No content') + '</div>' +
-        '<iframe id="htmlFrame" sandbox="" style="width:calc(100% - 44px);border:none;margin:0 22px;background:#fff;border-radius:4px"></iframe>';
+        '<iframe id="htmlFrame" sandbox="allow-same-origin" style="width:calc(100% - 44px);border:none;margin:0 22px;background:#fff;border-radius:4px"></iframe>';
     } else {
       bodyContent = '<div class="ev-body">' + esc(m.textBody || 'No content') + '</div>';
     }
@@ -695,7 +695,9 @@ function openMsg(uid) {
     if (toggleBtn && htmlFrame) {
       // Write HTML into iframe immediately (shown by default)
       var doc = htmlFrame.contentDocument || htmlFrame.contentWindow.document;
-      doc.open(); doc.write('<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;font-size:14px;line-height:1.6;color:#222;margin:0;padding:8px 4px;word-break:break-word}a{color:#a8324a}blockquote{border-left:3px solid #ccc;margin:8px 0;padding:4px 12px;color:#666}img{max-width:100%;height:auto}pre{overflow-x:auto}</style></head><body>' + m.htmlBody + '</body></html>'); doc.close();
+      // Sanitize: strip script tags and event handlers from email HTML
+      var safeHtml = m.htmlBody.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/on\w+\s*=\s*"[^"]*"/gi, '').replace(/on\w+\s*=\s*'[^']*'/gi, '').replace(/on\w+\s*=\s*\S+/gi, '');
+      doc.open(); doc.write('<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;font-size:14px;line-height:1.6;color:#222;margin:0;padding:8px 4px;word-break:break-word}a{color:#a8324a}blockquote{border-left:3px solid #ccc;margin:8px 0;padding:4px 12px;color:#666}img{max-width:100%;height:auto}pre{overflow-x:auto}</style></head><body>' + safeHtml + '</body></html>'); doc.close();
       setTimeout(function() {
         try { htmlFrame.style.height = (doc.body.scrollHeight + 20) + 'px'; } catch(e) {}
       }, 150);
