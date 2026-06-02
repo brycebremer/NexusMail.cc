@@ -278,7 +278,40 @@ function setConnected(v, info) {
   document.getElementById('connDot').className = v ? 'dot dot-on' : 'dot dot-off dot-pulse';
   document.getElementById('connText').textContent = v ? (info.user + ' @ ' + info.host) : 'Not connected';
   if (v) loadFolders();
+  if (v) mobileSetView('folder');
 }
+
+// ── Mobile Responsive Navigation ──
+var _mobileView = 'folder'; // 'folder' | 'list' | 'view'
+var _isMobile = false;
+
+function checkMobile() {
+  _isMobile = window.innerWidth <= 768;
+  if (_isMobile) mobileSetView(_mobileView);
+  else mobileSetView('desktop');
+}
+
+function mobileSetView(view) {
+  _mobileView = view;
+  var app = document.getElementById('app');
+  app.classList.remove('m-folder', 'm-list', 'm-view');
+  if (!_isMobile && view !== 'desktop') { checkMobile(); return; }
+  if (view === 'desktop') return; // no classes needed, CSS handles 3-col
+  app.classList.add('m-' + view);
+  // Show/hide back button
+  var backBtn = document.getElementById('mobileBack');
+  if (backBtn) backBtn.style.display = (view === 'folder') ? 'none' : 'inline-flex';
+  // Show/hide hamburger (folders menu) — only on list and view states
+  var menuBtn = document.getElementById('mobileMenu');
+  if (menuBtn) menuBtn.style.display = (view === 'folder') ? 'none' : 'inline-flex';
+}
+
+function mobileGoBack() {
+  if (_mobileView === 'view') mobileSetView('list');
+  else if (_mobileView === 'list') mobileSetView('folder');
+}
+
+window.addEventListener('resize', checkMobile);
 
 function loadFolders() {
   api('folders').then(function(folders) {
@@ -458,7 +491,7 @@ function toggleThread(tid, row) {
 function selectFolder(path) {
   S.folder = path; S.selected.clear(); S.activeUid = null; S.activeMsg = null; S.allSelected = false;
   renderFolders(); loadMessages();
-  document.getElementById('msgView').innerHTML = '<div class="empty-state"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" style="opacity:.3"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg><p>Select a message</p></div>';
+  document.getElementById('msgView').innerHTML = '<div class="empty-state"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" style="opacity:.3"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>  if (_isMobile) mobileSetView('list');
 }
 
 function loadMessages() {
@@ -636,6 +669,7 @@ function openMsg(uid) {
   if (S.folder === 'Drafts') { openDraft(uid); return; }
   S.activeUid = uid;
   S.newUids.delete(uid);  // Clear new-message highlight when opened
+  if (_isMobile) mobileSetView('view');
   // Optimistically mark as read in local state
   for (var i = 0; i < S.messages.length; i++) {
     if (S.messages[i].id === uid) {
@@ -1253,6 +1287,9 @@ fetch('/api/check', { credentials: 'include' }).then(function(r) { return r.json
   else if (j.authenticated) { hideLogin(); connectWS(); }
   else showLogin();
 }).catch(function() { showLogin(); });
+
+// Initialize mobile detection
+checkMobile();
 
 // ── Message Context Menu ──
 function msgContextMenu(e, uid) {

@@ -189,11 +189,52 @@ input:focus,textarea:focus{border-color:var(--accent)}textarea{resize:vertical}
 .m-from-wrap{display:flex;align-items:center;gap:7px;overflow:hidden;white-space:nowrap}
 .m-avatar{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0;letter-spacing:-0.5px}
 .m-from-wrap .m-from{overflow:hidden;text-overflow:ellipsis}
+
+/* ── Mobile / Responsive ── */
+@media(max-width:768px){
+  .app{grid-template-columns:1fr;grid-template-rows:50px 1fr}
+  .sidebar{display:none}
+  .msglist{display:none}
+  .msgview{display:none}
+  .topbar{padding:0 10px;gap:8px}
+  .logo span{display:none}
+  .search-wrap{max-width:none}
+  .topbar .btn-text{display:none}
+  .topbar-right .btn{padding:6px 8px}
+  .topbar-right .btn svg{margin:0}
+  .topbar-right .btn-primary .btn-text{display:none}
+  /* Mobile view states */
+  .app.m-folder .sidebar{display:flex;grid-column:1;grid-row:2}
+  .app.m-list .msglist{display:flex;grid-column:1;grid-row:2}
+  .app.m-view .msgview{display:flex;grid-column:1;grid-row:2}
+  .mobile-back{display:inline-flex!important}
+  #mobileMenu{display:inline-flex!important}
+  .compose{width:100%;max-width:100%;height:100%;max-height:100%;border-radius:0}
+  .login-box{width:100%;max-width:380px}
+  .ev-header{padding:14px 14px 10px}
+  .ev-header h2{font-size:16px}
+  .ev-body{padding:14px}
+  .ev-actions{padding:0 14px 10px}
+  .msg-row{padding:10px}
+  .list-bar{padding:8px 10px}
+  .rules-modal{width:100%;max-width:100%;max-height:100%;border-radius:0}
+  .move-picker{width:100%;max-height:80vh}
+  .m-from-wrap .m-from{font-size:13px}
+  .m-subj{font-size:13px}
+  .m-date{font-size:10px}
+  .folder .f-unread-count{font-size:14px}
+}
+@media(min-width:769px){
+  .mobile-back{display:none!important}
+  #mobileMenu{display:none!important}
+}
 </style>
 </head>
 <body>
 <div class="app" id="app">
   <div class="topbar">
+    <button class="icon-btn mobile-back" id="mobileBack" onclick="mobileGoBack()" style="display:none" title="Back"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg></button>
+    <button class="icon-btn" id="mobileMenu" onclick="mobileSetView('folder')" style="display:none" title="Folders"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
     <div class="logo"><span style="color:#6B0F0F;font-family:Consolas,Monaco,'Courier New',monospace;font-weight:800;font-size:26px;letter-spacing:3px;margin-right:10px;text-shadow:0 0 16px rgba(168,50,74,.25)">NM</span><span style="font-family:Consolas,Monaco,'Courier New',monospace;font-weight:300;font-size:20px;letter-spacing:2px;color:var(--text2)">NexusMail.cc</span></div>
     <div class="search-wrap">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
