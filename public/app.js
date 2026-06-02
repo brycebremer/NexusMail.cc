@@ -491,7 +491,8 @@ function toggleThread(tid, row) {
 function selectFolder(path) {
   S.folder = path; S.selected.clear(); S.activeUid = null; S.activeMsg = null; S.allSelected = false;
   renderFolders(); loadMessages();
-  document.getElementById('msgView').innerHTML = '<div class="empty-state"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" style="opacity:.3"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>  if (_isMobile) mobileSetView('list');
+  document.getElementById('msgView').innerHTML = '<div class="empty-state"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" style="opacity:.3"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg><p>Select a message</p></div>';
+  if (_isMobile) mobileSetView('list');
 }
 
 function loadMessages() {
